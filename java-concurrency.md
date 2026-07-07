@@ -267,7 +267,7 @@ Never:
 
 ```java
 if(conditionNotSatisfied)
-    wait();
+,j    wait();
 ```
 
 Reason:

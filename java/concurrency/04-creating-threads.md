@@ -662,9 +662,9 @@ Would a new thread still be created?
 The answer surprises many Java developers and is one of the most common interview questions.
 
 We'll explore that in the next section.
+
+
 ---
-
-
 # `start()` vs `run()`
 
 At first glance, these two methods appear similar.

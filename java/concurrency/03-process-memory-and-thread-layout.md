@@ -678,3 +678,301 @@ Two threads don't fight over their own stacks.
 They fight over **shared objects on the Heap**.
 
 In the next section, we'll use this understanding to explain race conditions with a simple `Counter` example.
+
+
+---
+
+# Putting Everything Together
+
+Let's revisit a simple example.
+
+```java
+class Counter {
+
+    int count = 0;
+
+    public void increment() {
+        count++;
+    }
+}
+```
+
+Suppose two threads execute the following code simultaneously:
+
+```java
+Counter counter = new Counter();
+
+Thread A:
+counter.increment();
+
+Thread B:
+counter.increment();
+```
+
+Where is the `Counter` object stored?
+
+From the previous sections, we know that:
+
+- The `Counter` object lives on the **Heap**.
+- The Heap is shared by all threads.
+
+```mermaid
+flowchart LR
+
+T1["Thread A"] --> H["Counter Object (Heap)"]
+T2["Thread B"] --> H
+```
+
+Both threads access the **same object**.
+
+This is perfectly legal—but it also introduces the possibility of both threads modifying the object at the same time.
+
+---
+
+# Why `count++` Isn't Atomic
+
+Many developers assume that this statement
+
+```java
+count++;
+```
+
+is a single operation.
+
+It isn't.
+
+The JVM breaks it down into multiple steps.
+
+```text
+Read count
+      ↓
+Add 1
+      ↓
+Write updated value
+```
+
+Now imagine the following execution order.
+
+```text
+Initial value = 0
+
+Thread A reads 0
+
+Thread B reads 0
+
+Thread A writes 1
+
+Thread B writes 1
+```
+
+Final value:
+
+```text
+1
+```
+
+Expected value:
+
+```text
+2
+```
+
+One update has been lost.
+
+This is known as a **Race Condition**.
+
+> [!WARNING]
+> A race condition occurs when multiple threads access and modify shared data without proper coordination, causing the result to depend on the timing of execution.
+
+---
+
+# Visualizing the Problem
+
+```mermaid
+sequenceDiagram
+
+participant A as Thread A
+participant H as Heap
+participant B as Thread B
+
+A->>H: Read count (0)
+B->>H: Read count (0)
+
+A->>H: Write 1
+B->>H: Write 1
+```
+
+Both threads perform the correct logic.
+
+The problem is that they perform it **at the same time**.
+
+---
+
+# Why Local Variables Don't Have This Problem
+
+Now compare it with this method.
+
+```java
+public int square(int number) {
+
+    int result = number * number;
+
+    return result;
+}
+```
+
+Suppose two threads call it simultaneously.
+
+```java
+square(5);
+
+square(10);
+```
+
+Memory layout:
+
+```text
+Thread A Stack
+
+number = 5
+
+result = 25
+```
+
+```text
+Thread B Stack
+
+number = 10
+
+result = 100
+```
+
+The variables belong to different stacks.
+
+They never interact.
+
+Therefore, no synchronization is required.
+
+---
+
+# Shared Memory vs Thread-Local Memory
+
+This entire chapter can be summarized using one simple rule.
+
+| Thread-Local Memory | Shared Memory |
+|---------------------|---------------|
+| Java Stack | Heap |
+| Program Counter | Method Area |
+| Native Stack | Static Variables |
+
+When multiple threads work only with **thread-local memory**, they operate independently.
+
+When they access **shared memory**, coordination may be required.
+
+> [!IMPORTANT]
+> Most concurrency problems occur because multiple threads access the same data stored in shared memory.
+
+---
+
+# Mental Checklist
+
+Whenever you write concurrent code, ask yourself:
+
+### Question 1
+
+**Is this data shared between multiple threads?**
+
+- Yes → Continue.
+- No → No synchronization is needed.
+
+---
+
+### Question 2
+
+**Can multiple threads modify this data?**
+
+- Yes → There is a possibility of a race condition.
+- No → Concurrent reads are generally safe.
+
+---
+
+### Question 3
+
+**Do I need synchronization?**
+
+If multiple threads can read and write the same shared data, the answer is usually **yes**.
+
+The synchronization mechanism depends on the use case, but the underlying reason is always the same:
+
+> Multiple threads are accessing the same memory.
+
+---
+
+# Common Misconceptions
+
+> [!WARNING]
+> **"Every variable is shared between threads."**
+>
+> Incorrect.
+>
+> Local variables are stored on a thread's private stack.
+
+---
+
+> [!WARNING]
+> **"Objects are copied for every thread."**
+>
+> Incorrect.
+>
+> Objects are typically stored once on the Heap and shared by all threads that hold a reference to them.
+
+---
+
+> [!WARNING]
+> **"`count++` is a single operation."**
+>
+> Incorrect.
+>
+> It consists of multiple steps and is therefore not thread-safe.
+
+---
+
+# Summary
+
+Let's summarize everything we've learned in this chapter.
+
+| Memory Region | Shared | Purpose |
+|---------------|:------:|---------|
+| Heap | ✅ | Stores objects and arrays |
+| Method Area | ✅ | Stores class metadata and static members |
+| Java Stack | ❌ | Stores method frames, local variables, and parameters |
+| Program Counter | ❌ | Tracks the next instruction to execute |
+| Native Method Stack | ❌ | Supports execution of native methods |
+
+---
+
+# Key Takeaways
+
+- A Java application runs as a **process**.
+- Every process contains both **shared** and **thread-local** memory.
+- Objects are usually allocated on the **Heap**.
+- Every thread has its own **Java Stack**.
+- Local variables are naturally thread-safe because they are stored on the thread's private stack.
+- Shared objects can be accessed by multiple threads simultaneously.
+- Race conditions occur when shared data is modified without proper synchronization.
+
+---
+
+# What's Next?
+
+Now that we understand **where threads store data** and **why shared memory can lead to race conditions**, we're ready to explore how Java creates and manages threads.
+
+In the next chapter, we'll learn:
+
+- The `Thread` class
+- The `Runnable` interface
+- The `Callable` interface
+- Why `Runnable` is preferred over extending `Thread`
+- `start()` vs `run()`
+
+By the end of the next chapter, you'll be able to create and execute threads confidently while understanding the memory model behind them.

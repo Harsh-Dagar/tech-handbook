@@ -338,3 +338,475 @@ In the next section, we'll answer another important question:
 > **How can one thread wait for another thread to finish?**
 
 The answer is the `join()` method.
+
+
+---
+
+# Waiting for Another Thread — `join()`
+
+In many applications, one thread cannot continue until another thread has completed its work.
+
+Imagine downloading a large file.
+
+```
+Download File
+       │
+       ▼
+Process File
+```
+
+It doesn't make sense to process the file before the download finishes.
+
+This is exactly the problem that `join()` solves.
+
+---
+
+# What Does `join()` Do?
+
+The `join()` method allows one thread to wait for another thread to complete.
+
+```java
+worker.join();
+```
+
+When this statement executes,
+
+the **current thread** pauses until `worker` finishes execution.
+
+```mermaid
+sequenceDiagram
+
+participant Main
+participant Worker
+
+Main->>Worker: start()
+
+Main->>Main: join()
+
+Note over Main: WAITING
+
+Worker->>Worker: Executes run()
+
+Worker-->>Main: Finishes
+
+Main->>Main: Continues Execution
+```
+
+Notice something important.
+
+The **worker thread does not wait**.
+
+The **thread calling `join()` waits**.
+
+---
+
+# Example
+
+```java
+class Worker extends Thread {
+
+    @Override
+    public void run() {
+
+        System.out.println("Downloading...");
+
+    }
+
+}
+
+public class Main {
+
+    public static void main(String[] args)
+            throws InterruptedException {
+
+        Worker worker = new Worker();
+
+        worker.start();
+
+        worker.join();
+
+        System.out.println("Processing Download");
+
+    }
+
+}
+```
+
+Possible output
+
+```text
+Downloading...
+
+Processing Download
+```
+
+Without `join()`, the second message could appear before the download finishes.
+
+---
+
+# What State Does `join()` Cause?
+
+When a thread calls:
+
+```java
+worker.join();
+```
+
+the current thread enters the **WAITING** state.
+
+```mermaid
+stateDiagram-v2
+
+RUNNABLE --> WAITING : join()
+
+WAITING --> RUNNABLE : Worker Finishes
+```
+
+If a timeout is specified,
+
+```java
+worker.join(5000);
+```
+
+the thread enters **TIMED_WAITING** instead.
+
+---
+
+# Common Use Cases
+
+`join()` is useful when work must happen in a specific order.
+
+Examples include:
+
+- Waiting for multiple files to download.
+- Waiting for data loading before processing.
+- Waiting for background initialization.
+- Waiting for worker threads during application shutdown.
+
+> [!TIP]
+> `join()` coordinates threads without using shared variables or locks.
+
+---
+
+# Interrupting a Thread
+
+Sometimes waiting is no longer necessary.
+
+For example,
+
+suppose a thread is sleeping for ten seconds.
+
+Suddenly,
+
+the application is shutting down.
+
+Instead of waiting the full ten seconds, we want to wake the thread immediately.
+
+Java provides the `interrupt()` method for this purpose.
+
+---
+
+# What Does `interrupt()` Do?
+
+Calling
+
+```java
+thread.interrupt();
+```
+
+does **not forcibly stop** a thread.
+
+Instead,
+
+it sends an interruption request.
+
+Think of it as politely saying:
+
+> "Please stop what you're waiting for if possible."
+
+The thread decides how to respond.
+
+---
+
+# Example
+
+```java
+class Worker extends Thread {
+
+    @Override
+    public void run() {
+
+        try {
+
+            Thread.sleep(10000);
+
+        } catch (InterruptedException e) {
+
+            System.out.println("Interrupted!");
+
+        }
+
+    }
+
+}
+```
+
+Main thread:
+
+```java
+worker.start();
+
+Thread.sleep(2000);
+
+worker.interrupt();
+```
+
+Output
+
+```text
+Interrupted!
+```
+
+Instead of sleeping for ten seconds,
+
+the thread wakes up immediately because it received an interrupt.
+
+---
+
+# Interrupt Is Cooperative
+
+This is one of the most misunderstood concepts in Java.
+
+Calling
+
+```java
+interrupt()
+```
+
+does **not** kill a thread.
+
+Instead,
+
+it requests that the thread stop waiting or sleeping.
+
+If the thread ignores the request,
+
+it continues running.
+
+```text
+Main Thread
+
+↓
+
+interrupt()
+
+↓
+
+Worker Receives Request
+
+↓
+
+Worker Chooses How to Respond
+```
+
+This design prevents applications from terminating threads in unsafe states.
+
+---
+
+# Checking the Interrupt Status
+
+Sometimes a thread isn't sleeping or waiting.
+
+Instead,
+
+it periodically checks whether an interrupt request has been received.
+
+```java
+while (!Thread.currentThread().isInterrupted()) {
+
+    doWork();
+
+}
+```
+
+Once another thread calls
+
+```java
+interrupt();
+```
+
+the loop exits naturally.
+
+This is one of the most common ways to stop long-running background threads.
+
+---
+
+# `interrupt()` vs `stop()`
+
+Older versions of Java provided:
+
+```java
+thread.stop();
+```
+
+This method has been deprecated for many years.
+
+Why?
+
+Because it terminated threads immediately,
+
+possibly leaving shared data in an inconsistent state.
+
+Modern Java prefers cooperative cancellation using `interrupt()`.
+
+| `interrupt()` | `stop()` |
+|---------------|----------|
+| Requests cancellation | Forcefully terminates thread |
+| Safe | Unsafe |
+| Recommended | Deprecated |
+
+> [!WARNING]
+> Never use `Thread.stop()` in new code.
+
+---
+
+# What About `yield()`?
+
+Sometimes a thread is willing to let another runnable thread execute first.
+
+Java provides:
+
+```java
+Thread.yield();
+```
+
+This tells the scheduler:
+
+> "I'm willing to let another runnable thread execute."
+
+Notice the wording.
+
+It is only a **hint**.
+
+The operating system may ignore it completely.
+
+```text
+Current Thread
+
+↓
+
+yield()
+
+↓
+
+Scheduler Decides
+
+├── Continue Same Thread
+
+└── Run Another Thread
+```
+
+Because scheduler behavior depends on the operating system,
+
+`yield()` is rarely used in production code.
+
+> [!NOTE]
+> Treat `yield()` as a scheduler hint rather than a synchronization mechanism.
+
+---
+
+# Thread Control Summary
+
+| Method | Purpose | Resulting State |
+|----------|---------|----------------|
+| `sleep()` | Pause current thread | TIMED_WAITING |
+| `join()` | Wait for another thread | WAITING |
+| `join(timeout)` | Wait with timeout | TIMED_WAITING |
+| `interrupt()` | Request interruption | Depends on current state |
+| `currentThread()` | Get current thread | No state change |
+| `yield()` | Hint scheduler | Usually remains RUNNABLE |
+
+---
+
+# Best Practices
+
+✅ Use `sleep()` only when a timed pause is actually required.
+
+✅ Prefer `join()` when one thread depends on another.
+
+✅ Use `interrupt()` for cooperative thread cancellation.
+
+✅ Restore the interrupt status if you catch `InterruptedException` and cannot fully handle it.
+
+```java
+catch (InterruptedException e) {
+
+    Thread.currentThread().interrupt();
+
+}
+```
+
+✅ Do not rely on `yield()` for program correctness.
+
+---
+
+# Key Takeaways
+
+- `sleep()` pauses the **current thread**.
+- `join()` allows one thread to wait for another.
+- `interrupt()` requests cancellation—it does not forcibly stop a thread.
+- `yield()` is only a scheduling hint.
+- `Thread.currentThread()` returns the currently executing thread.
+
+---
+
+# Quick Quiz
+
+### 1. Which thread waits when `worker.join()` is called?
+
+- [ ] The worker thread
+- [x] The thread calling `join()`
+
+---
+
+### 2. Does `interrupt()` immediately terminate a thread?
+
+- [ ] Yes
+- [x] No
+
+---
+
+### 3. Which method should be used to stop a thread safely?
+
+<details>
+<summary>Answer</summary>
+
+Use `interrupt()` together with cooperative cancellation. Avoid `Thread.stop()`, as it has been deprecated for many years.
+
+</details>
+
+---
+
+# What's Next?
+
+So far, we've learned how to:
+
+- Create threads.
+- Control their execution.
+- Wait for them to complete.
+
+The next challenge is even more interesting.
+
+> **How do two threads communicate with each other?**
+
+Suppose one thread produces data while another consumes it.
+
+How does the consumer know when new data is available?
+
+Java answers this using:
+
+- `wait()`
+- `notify()`
+- `notifyAll()`
+
+These methods form the foundation of thread communication, which we'll explore in the next chapter.

@@ -662,3 +662,453 @@ Would a new thread still be created?
 The answer surprises many Java developers and is one of the most common interview questions.
 
 We'll explore that in the next section.
+---
+
+
+# `start()` vs `run()`
+
+At first glance, these two methods appear similar.
+
+```java
+thread.start();
+```
+
+and
+
+```java
+thread.run();
+```
+
+Both eventually execute the `run()` method.
+
+So why does Java provide two different methods?
+
+The answer lies in **who calls `run()`**.
+
+---
+
+# Calling `run()` Directly
+
+Consider the following code.
+
+```java
+class Worker extends Thread {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName());
+    }
+
+}
+
+public class Main {
+
+    public static void main(String[] args) {
+
+        Worker worker = new Worker();
+
+        worker.run();
+
+    }
+
+}
+```
+
+Output
+
+```text
+main
+```
+
+Surprising?
+
+Many beginners expect the output to be:
+
+```text
+Thread-0
+```
+
+However, no new thread was ever created.
+
+The `run()` method behaved like any other Java method.
+
+The **main thread** simply called it directly.
+
+```mermaid
+flowchart LR
+
+A["Main Thread"]
+--> B["worker.run()"]
+--> C["run() Executes"]
+
+style A fill:#E3F2FD
+style B fill:#FFF3E0
+style C fill:#E8F5E9
+```
+
+Nothing special happened.
+
+No operating system interaction.
+
+No scheduler.
+
+No context switching.
+
+No new thread.
+
+> [!IMPORTANT]
+> Calling `run()` directly is just a normal method call.
+
+---
+
+# Calling `start()`
+
+Now consider the correct approach.
+
+```java
+Worker worker = new Worker();
+
+worker.start();
+```
+
+This looks almost identical.
+
+Internally, however, something very different happens.
+
+```mermaid
+flowchart LR
+
+A["Main Thread"]
+
+A --> B["worker.start()"]
+
+B --> C["JVM Creates New Thread"]
+
+C --> D["Operating System Schedules Thread"]
+
+D --> E["run() Executes"]
+
+style A fill:#E3F2FD
+style B fill:#FFF3E0
+style C fill:#E8F5E9
+style D fill:#E8F5E9
+style E fill:#E8F5E9
+```
+
+Notice the extra steps.
+
+Calling `start()` **does not immediately execute your code**.
+
+Instead, it asks the JVM to create a new thread.
+
+The JVM then communicates with the operating system.
+
+Eventually, the operating system schedules the new thread, which begins executing the `run()` method.
+
+---
+
+# Visual Comparison
+
+### Calling `run()`
+
+```text
+Main Thread
+
+main()
+
+    │
+
+    ▼
+
+worker.run()
+
+    │
+
+    ▼
+
+run() executes on Main Thread
+```
+
+Only one thread exists.
+
+---
+
+### Calling `start()`
+
+```text
+Main Thread
+
+main()
+
+    │
+
+    ▼
+
+worker.start()
+
+    │
+
+    ▼
+
+JVM Creates Thread
+
+    │
+
+    ▼
+
+Operating System Schedules Thread
+
+    │
+
+    ▼
+
+run() executes on New Thread
+```
+
+Now two threads execute independently.
+
+---
+
+# Checking the Current Thread
+
+The easiest way to observe this behavior is by printing the thread name.
+
+```java
+System.out.println(Thread.currentThread().getName());
+```
+
+### Example 1
+
+```java
+worker.run();
+```
+
+Output
+
+```text
+main
+```
+
+---
+
+### Example 2
+
+```java
+worker.start();
+```
+
+Possible Output
+
+```text
+Thread-0
+```
+
+or
+
+```text
+Thread-1
+```
+
+depending on the JVM.
+
+This simple experiment clearly demonstrates that `start()` creates a new thread while `run()` does not.
+
+---
+
+# Can `start()` Be Called Twice?
+
+Consider the following code.
+
+```java
+Worker worker = new Worker();
+
+worker.start();
+
+worker.start();
+```
+
+What happens?
+
+The JVM throws an exception.
+
+```text
+java.lang.IllegalThreadStateException
+```
+
+Why?
+
+A `Thread` object represents a single execution.
+
+Once that execution has started, the same thread cannot be started again.
+
+If you need another thread, create a new `Thread` object.
+
+```java
+new Worker().start();
+
+new Worker().start();
+```
+
+Each object represents a new thread.
+
+> [!WARNING]
+> A `Thread` instance can be started only once.
+
+---
+
+# Common Beginner Mistakes
+
+### Mistake 1
+
+Calling `run()` instead of `start()`.
+
+```java
+worker.run();
+```
+
+Result
+
+- No concurrency
+- Executes on the current thread
+
+---
+
+### Mistake 2
+
+Calling `start()` twice.
+
+```java
+worker.start();
+
+worker.start();
+```
+
+Result
+
+```text
+IllegalThreadStateException
+```
+
+---
+
+### Mistake 3
+
+Assuming execution order.
+
+```java
+worker.start();
+
+System.out.println("Finished");
+```
+
+Many developers expect:
+
+```text
+Worker
+Finished
+```
+
+But the actual output could be:
+
+```text
+Finished
+Worker
+```
+
+or
+
+```text
+Worker
+Finished
+```
+
+The operating system decides when the new thread runs.
+
+Unless synchronization is used, the execution order is **not guaranteed**.
+
+---
+
+# Summary
+
+In this chapter, we learned how Java creates and executes threads.
+
+We explored two different approaches:
+
+- Extending the `Thread` class
+- Implementing the `Runnable` interface
+
+We also learned why modern Java applications almost always prefer `Runnable`:
+
+- It separates the task from the worker.
+- It promotes composition over inheritance.
+- It integrates naturally with higher-level concurrency APIs.
+
+Finally, we saw why `start()` and `run()` are fundamentally different.
+
+Although both eventually execute the `run()` method, only `start()` creates a new thread.
+
+---
+
+# Key Takeaways
+
+- Every Java application begins with the **main thread**.
+- A `Thread` represents a worker.
+- A `Runnable` represents a unit of work.
+- Prefer implementing `Runnable` over extending `Thread`.
+- Calling `run()` is a normal method call.
+- Calling `start()` creates a new thread.
+- A `Thread` object can only be started once.
+
+---
+
+# Quick Quiz
+
+### 1. Which method actually creates a new thread?
+
+- [ ] `run()`
+- [x] `start()`
+
+---
+
+### 2. Why is `Runnable` generally preferred?
+
+<details>
+<summary>Answer</summary>
+
+Because it separates the task from the thread, promotes composition over inheritance, and works seamlessly with modern Java concurrency APIs.
+
+</details>
+
+---
+
+### 3. Where does the `run()` method execute if called directly?
+
+<details>
+<summary>Answer</summary>
+
+On the current thread (for example, the `main` thread). Calling `run()` directly does not create a new thread.
+
+</details>
+
+---
+
+# What's Next?
+
+We've learned **how to create threads**.
+
+The next question is:
+
+> **What happens after a thread is created?**
+
+Threads don't simply start and stop.
+
+They move through several states during their lifetime:
+
+- NEW
+- RUNNABLE
+- BLOCKED
+- WAITING
+- TIMED_WAITING
+- TERMINATED
+
+In the next chapter, we'll explore the complete **Thread Lifecycle**, understand how the scheduler interacts with threads, and learn how methods like `sleep()`, `wait()`, `notify()`, and `join()` affect a thread's state.

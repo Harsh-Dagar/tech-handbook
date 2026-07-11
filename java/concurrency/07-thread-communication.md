@@ -259,32 +259,35 @@ it performs **three actions**:
 
 ```mermaid
 flowchart TD
+    A["Thread enters synchronized block"]
+    B["Owns monitor"]
+    C["Calls wait()"]
+    D["Releases monitor"]
+    E["WAITING"]
 
-A["Owns Monitor"]
+    F["Another thread enters synchronized block"]
+    G["Modifies shared state"]
+    H["Calls notify()"]
+    I["Releases monitor"]
 
-↓
+    J["Waiting thread becomes RUNNABLE"]
+    K["Reacquires monitor"]
+    L["Continues after wait()"]
 
-B["wait()"]
+    A --> B
+    B --> C
+    C --> D
+    D --> E
 
-↓
+    E --> J
 
-C["Releases Monitor"]
+    F --> G
+    G --> H
+    H --> I
 
-↓
-
-D["WAITING"]
-
-↓
-
-E["notify()"]
-
-↓
-
-F["Attempts to Reacquire Monitor"]
-
-↓
-
-G["Continues Execution"]
+    I --> J
+    J --> K
+    K --> L
 ```
 
 Notice something important.

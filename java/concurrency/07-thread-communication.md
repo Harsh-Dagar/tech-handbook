@@ -860,3 +860,402 @@ Continue Execution
 We've now learned **how threads sleep, how they wake up, and why they must always recheck the shared condition**.
 
 In the next section, we'll put everything together by solving the classic **Producer–Consumer Problem**, one of the most important examples in concurrent programming.
+
+
+---
+
+# The Producer–Consumer Problem
+
+We've learned that:
+
+- `wait()` allows a thread to pause efficiently.
+- `notify()` and `notifyAll()` allow another thread to wake waiting threads.
+
+Now let's put these concepts together to solve one of the most famous concurrency problems.
+
+Imagine a restaurant.
+
+```
+Chef (Producer)
+        │
+        ▼
+     Food Ready
+        │
+        ▼
+Counter (Shared Buffer)
+        │
+        ▼
+Delivery Partner (Consumer)
+```
+
+The chef prepares food.
+
+The delivery partner delivers food.
+
+The counter acts as the shared resource.
+
+There are two possible situations:
+
+1. The counter is empty.
+   - The delivery partner must wait.
+
+2. The counter is full.
+   - The chef must wait.
+
+Neither thread should continuously check the counter.
+
+Instead, they should communicate efficiently using `wait()` and `notifyAll()`.
+
+---
+
+# Designing the Shared Buffer
+
+For simplicity, let's assume the counter can hold only **one item**.
+
+```text
++----------------------+
+|      Shared Buffer   |
++----------------------+
+|        Empty         |
++----------------------+
+```
+
+Possible states:
+
+```text
+Producer
+
+↓
+
+Put Item
+
+↓
+
+Buffer Full
+```
+
+```text
+Consumer
+
+↓
+
+Take Item
+
+↓
+
+Buffer Empty
+```
+
+Only one thread should modify the buffer at a time.
+
+Therefore, all operations must be synchronized.
+
+---
+
+# Implementation
+
+```java
+class Buffer {
+
+    private Integer item = null;
+
+    public synchronized void produce(int value)
+            throws InterruptedException {
+
+        while (item != null) {
+            wait();
+        }
+
+        item = value;
+
+        System.out.println(
+            "Produced : " + value
+        );
+
+        notifyAll();
+    }
+
+    public synchronized int consume()
+            throws InterruptedException {
+
+        while (item == null) {
+            wait();
+        }
+
+        int value = item;
+
+        item = null;
+
+        notifyAll();
+
+        return value;
+    }
+
+}
+```
+
+Although this class is small, it demonstrates several important concepts.
+
+---
+
+# Understanding the Producer
+
+Let's walk through the producer method step by step.
+
+```java
+while (item != null) {
+
+    wait();
+
+}
+```
+
+If the buffer already contains an item,
+
+the producer cannot insert another one.
+
+Instead of repeatedly checking,
+
+it waits efficiently.
+
+Once the consumer removes the item,
+
+the producer is notified and checks the condition again.
+
+Only then does it continue.
+
+---
+
+# Understanding the Consumer
+
+The consumer performs the opposite check.
+
+```java
+while (item == null) {
+
+    wait();
+
+}
+```
+
+If no item exists,
+
+there is nothing to consume.
+
+The consumer simply waits.
+
+When the producer inserts an item,
+
+it calls:
+
+```java
+notifyAll();
+```
+
+allowing the consumer to wake up and continue.
+
+---
+
+# Communication Flow
+
+```mermaid
+sequenceDiagram
+
+participant Producer
+participant Buffer
+participant Consumer
+
+Producer->>Buffer: produce()
+
+alt Buffer Full
+    Producer->>Buffer: wait()
+end
+
+Producer->>Buffer: Insert Item
+
+Producer->>Buffer: notifyAll()
+
+Consumer->>Buffer: consume()
+
+alt Buffer Empty
+    Consumer->>Buffer: wait()
+end
+
+Consumer->>Buffer: Remove Item
+
+Consumer->>Buffer: notifyAll()
+```
+
+Notice something important.
+
+The producer and consumer never communicate directly.
+
+Instead,
+
+both communicate **through the shared buffer**.
+
+The buffer owns the monitor,
+
+making it the synchronization point.
+
+---
+
+# Common Mistakes
+
+## 1. Using `if` Instead of `while`
+
+❌ Incorrect
+
+```java
+if (item == null) {
+
+    wait();
+
+}
+```
+
+If the thread wakes up unexpectedly,
+
+it continues immediately,
+
+possibly operating on invalid data.
+
+✅ Correct
+
+```java
+while (item == null) {
+
+    wait();
+
+}
+```
+
+Always verify the condition after waking up.
+
+---
+
+## 2. Calling `wait()` Outside `synchronized`
+
+❌
+
+```java
+wait();
+```
+
+This throws:
+
+```text
+IllegalMonitorStateException
+```
+
+The thread must own the monitor before calling `wait()`.
+
+---
+
+## 3. Forgetting to Notify Waiting Threads
+
+Suppose the producer inserts an item but never calls:
+
+```java
+notifyAll();
+```
+
+The consumer remains asleep forever.
+
+This creates a deadlock-like situation where progress stops even though work is available.
+
+---
+
+## 4. Assuming `notify()` Wakes a Specific Thread
+
+The JVM makes no guarantee about which waiting thread will be selected.
+
+Never write code that depends on a particular thread being awakened.
+
+---
+
+# Best Practices
+
+✅ Always guard `wait()` with a `while` loop.
+
+✅ Keep shared state private.
+
+✅ Synchronize every access to shared mutable state.
+
+✅ Use `notifyAll()` unless you have a strong reason to use `notify()`.
+
+✅ Keep synchronized blocks as small as possible.
+
+---
+
+# Key Takeaways
+
+- Thread communication avoids busy waiting.
+- Every Java object can act as a communication point through its monitor.
+- `wait()` releases the monitor and suspends the current thread.
+- `notify()` wakes one waiting thread.
+- `notifyAll()` wakes every waiting thread.
+- A notified thread must reacquire the monitor before continuing.
+- Always protect `wait()` with a `while` loop.
+
+---
+
+# Quick Quiz
+
+### 1. Why is busy waiting inefficient?
+
+- [ ] It uses too much memory.
+- [x] It continuously consumes CPU while checking a condition.
+- [ ] It creates more threads.
+
+---
+
+### 2. What happens when a thread calls `wait()`?
+
+- [x] It releases the monitor and enters the `WAITING` state.
+- [ ] It keeps the monitor and sleeps.
+- [ ] It terminates.
+
+---
+
+### 3. Does `notify()` immediately execute the waiting thread?
+
+- [ ] Yes
+- [x] No
+
+The waiting thread must first reacquire the monitor before continuing.
+
+---
+
+### 4. Why is `while` preferred over `if` when calling `wait()`?
+
+<details>
+<summary>Answer</summary>
+
+A thread may wake up because of a notification, a spurious wakeup, or because another thread consumed the shared resource first. Rechecking the condition ensures the thread only proceeds when it is actually safe to continue.
+
+</details>
+
+---
+
+# Chapter Summary
+
+In this chapter, we learned how Java threads communicate without wasting CPU resources.
+
+We started by understanding why **busy waiting** is inefficient and introduced the concept of **object monitors** as a coordination mechanism.
+
+We then explored how:
+
+- `wait()` suspends the current thread while releasing the monitor.
+- `notify()` wakes one waiting thread.
+- `notifyAll()` wakes all waiting threads.
+
+Finally, we applied these concepts to solve the classic **Producer–Consumer Problem**, demonstrating how threads can safely coordinate through a shared object.
+
+With thread communication complete, we're now ready to tackle a new challenge:
+
+> **What happens when multiple threads modify the same data at the same time?**
+
+The answer leads us to the next chapter:
+
+**Synchronization and Race Conditions.**

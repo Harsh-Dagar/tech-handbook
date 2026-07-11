@@ -484,3 +484,379 @@ In the next section, we'll complete the picture by learning:
 - Producer–Consumer
 - Common communication mistakes
 - Best practices
+
+
+---
+
+# Waking Up Waiting Threads
+
+In the previous section, we learned that a thread can voluntarily suspend itself by calling:
+
+```java
+lock.wait();
+```
+
+At this point, the thread enters the **WAITING** state and releases the monitor.
+
+The obvious question now is:
+
+> **How does the waiting thread know when it should continue?**
+
+The answer is through **notifications**.
+
+Java provides two methods:
+
+```java
+notify();
+```
+
+and
+
+```java
+notifyAll();
+```
+
+Both methods are defined in the `Object` class and are used to wake waiting threads.
+
+---
+
+# `notify()`
+
+The `notify()` method wakes **one arbitrary thread** waiting on the object's monitor.
+
+```java
+synchronized (lock) {
+
+    // Update shared state
+
+    lock.notify();
+
+}
+```
+
+Notice something important.
+
+Calling `notify()` **does not immediately transfer execution** to the waiting thread.
+
+Instead, it simply moves one waiting thread from the **WAITING** state back to **RUNNABLE**.
+
+The awakened thread must still wait until the monitor becomes available.
+
+```mermaid
+stateDiagram-v2
+
+    WAITING --> RUNNABLE : notify()
+
+    RUNNABLE --> RUNNING : Scheduler + Monitor Acquired
+```
+
+The thread continues execution only after:
+
+1. It receives a notification.
+2. It successfully reacquires the monitor.
+
+---
+
+# Why Doesn't `notify()` Wake the Thread Immediately?
+
+Suppose Thread A is waiting.
+
+```
+Thread A
+
+WAITING
+```
+
+Thread B currently owns the monitor.
+
+```
+Thread B
+
+Owns Monitor
+
+↓
+
+notify()
+
+↓
+
+Still Executing
+```
+
+Even after calling `notify()`, Thread B **still owns the monitor**.
+
+Thread A cannot continue until Thread B exits the synchronized block.
+
+```
+Thread B
+
+Release Monitor
+
+↓
+
+Thread A
+
+Acquire Monitor
+
+↓
+
+Continue Execution
+```
+
+This ensures that shared data remains consistent.
+
+> [!IMPORTANT]
+> A notification only makes a waiting thread **eligible to continue**. It does **not** allow it to skip the monitor acquisition step.
+
+---
+
+# `notifyAll()`
+
+Sometimes multiple threads are waiting on the same monitor.
+
+Imagine three consumer threads waiting for work.
+
+```
+Consumer 1
+
+WAITING
+
+Consumer 2
+
+WAITING
+
+Consumer 3
+
+WAITING
+```
+
+Calling:
+
+```java
+lock.notify();
+```
+
+wakes only **one** of them.
+
+The JVM does **not** guarantee which thread will be selected.
+
+Instead, if we call:
+
+```java
+lock.notifyAll();
+```
+
+all waiting threads become runnable.
+
+```mermaid
+flowchart TD
+
+A["WAITING THREADS"]
+
+A --> B["Thread 1"]
+
+A --> C["Thread 2"]
+
+A --> D["Thread 3"]
+
+B --> E["RUNNABLE"]
+
+C --> E
+
+D --> E
+```
+
+Notice that they do **not** execute simultaneously.
+
+They still compete for the monitor.
+
+Only one thread can acquire it at a time.
+
+---
+
+# `notify()` vs `notifyAll()`
+
+| `notify()` | `notifyAll()` |
+|------------|---------------|
+| Wakes one waiting thread | Wakes every waiting thread |
+| JVM chooses which thread | All waiting threads become runnable |
+| More efficient when only one thread needs to continue | Safer when multiple waiting conditions exist |
+
+---
+
+# Which One Should You Prefer?
+
+Many beginners assume that `notify()` is always better because it wakes fewer threads.
+
+In reality, that's not always true.
+
+Imagine multiple threads waiting for **different conditions**.
+
+```
+Thread A
+
+Waiting for Buffer Not Empty
+```
+
+```
+Thread B
+
+Waiting for Buffer Not Full
+```
+
+If the wrong thread is notified,
+
+it may wake up,
+
+check its condition,
+
+and immediately go back to waiting.
+
+Meanwhile,
+
+the correct thread remains asleep.
+
+This can lead to unnecessary waiting or even deadlocks in poorly designed programs.
+
+Because of this,
+
+many production systems prefer:
+
+```java
+notifyAll();
+```
+
+Each awakened thread checks its own condition.
+
+Only the thread whose condition is satisfied continues.
+
+The others simply call `wait()` again.
+
+---
+
+# Why We Always Use a `while` Loop
+
+Earlier, we wrote:
+
+```java
+while (!condition) {
+
+    lock.wait();
+
+}
+```
+
+Now we can understand why.
+
+Suppose five threads are awakened by:
+
+```java
+notifyAll();
+```
+
+Only one of them may actually be able to proceed.
+
+The remaining threads wake up,
+
+recheck the condition,
+
+and go back to waiting.
+
+```text
+WAITING
+
+↓
+
+notifyAll()
+
+↓
+
+Wake Up
+
+↓
+
+Condition True?
+
+├── Yes → Continue
+
+└── No → wait() Again
+```
+
+This is exactly why Java recommends:
+
+```java
+while (!condition) {
+
+    lock.wait();
+
+}
+```
+
+instead of:
+
+```java
+if (!condition) {
+
+    lock.wait();
+
+}
+```
+
+The loop guarantees that the condition is verified every time the thread wakes up.
+
+---
+
+# Best Practices
+
+✅ Always call `wait()`, `notify()`, and `notifyAll()` inside a `synchronized` block.
+
+✅ Always protect `wait()` with a `while` loop.
+
+✅ Prefer `notifyAll()` when multiple waiting conditions exist.
+
+✅ Keep synchronized blocks as small as possible to reduce lock contention.
+
+❌ Never assume that `notify()` wakes a specific thread.
+
+❌ Never assume that waking a thread means it will execute immediately.
+
+---
+
+# Summary So Far
+
+At this point, we understand the complete communication cycle.
+
+```text
+Acquire Monitor
+        │
+        ▼
+Condition False
+        │
+        ▼
+wait()
+        │
+        ▼
+WAITING
+        │
+        ▼
+Producer Updates State
+        │
+        ▼
+notify() / notifyAll()
+        │
+        ▼
+RUNNABLE
+        │
+        ▼
+Reacquire Monitor
+        │
+        ▼
+Condition Checked Again
+        │
+        ▼
+Continue Execution
+```
+
+We've now learned **how threads sleep, how they wake up, and why they must always recheck the shared condition**.
+
+In the next section, we'll put everything together by solving the classic **Producer–Consumer Problem**, one of the most important examples in concurrent programming.

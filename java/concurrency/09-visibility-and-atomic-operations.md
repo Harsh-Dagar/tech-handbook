@@ -8,50 +8,72 @@
 >
 > - Race Conditions & Synchronization
 >
+> **Core Question**
+>
+> > **Why doesn't one thread always see the changes made by another thread, and how can Java safely update shared data without locking?**
+>
 > **In this chapter, you'll learn**
 >
-> - Why threads sometimes cannot see each other's changes.
+> - Why threads may observe stale data.
 > - What memory visibility means.
-> - How the `volatile` keyword works.
-> - What guarantees `volatile` provides.
-> - What `volatile` does **not** guarantee.
-> - When to use `volatile`.
+> - How the `volatile` keyword ensures visibility.
+> - Why `volatile` cannot make `counter++` thread-safe.
+> - How atomic classes provide lock-free updates.
+> - The idea behind Compare-And-Set (CAS).
+
+---
+
+> [!TIP]
+> **Mental Model**
+>
+> Concurrency problems usually fall into one of three categories:
+>
+> - **Visibility** → Can other threads see my changes?
+> - **Atomicity** → Can an operation be interrupted halfway?
+> - **Ordering** → Can instructions execute in an unexpected order?
+>
+> This chapter focuses on the first two.
+> We'll study instruction ordering and the Java Memory Model later.
 
 ---
 
 # Introduction
 
-In the previous chapter, we learned how to protect shared data using `synchronized`.
+In the previous chapter, we learned how `synchronized` prevents multiple threads from modifying shared data at the same time.
 
-Now let's look at a different problem.
+But synchronization isn't the only challenge in concurrent programming.
 
-Imagine two threads sharing a variable.
+Sometimes, threads don't interfere with each other at all...
 
-```java
-boolean running = true;
-```
+yet the program still behaves incorrectly.
 
-Thread A repeatedly checks the value.
-
-```java
-while (running) {
-
-    // Do some work
-
-}
-```
-
-Thread B eventually stops the thread.
+Imagine one thread updates a variable:
 
 ```java
 running = false;
 ```
 
-Intuitively, Thread A should stop.
+Another thread keeps checking:
 
-But surprisingly, it may continue running forever.
+```java
+while (running) {
+    // Work...
+}
+```
 
-How is that possible?
+Should the loop eventually stop?
+
+Most developers would say **yes**.
+
+Surprisingly, the answer isn't always yes.
+
+A thread may continue reading an **old value**, even though another thread has already updated it.
+
+This isn't a race condition.
+
+It's a **visibility problem**.
+
+In this chapter, we'll learn why visibility problems occur, how the `volatile` keyword solves them, and why atomic classes such as `AtomicInteger` are needed for safe updates without traditional locks.
 
 ---
 

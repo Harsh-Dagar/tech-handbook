@@ -792,3 +792,113 @@ We also learned that:
 - Choosing the correct lock object is essential for thread safety.
 
 In the next section, we'll explore one important limitation of `synchronized` and introduce **deadlocks**, where multiple threads end up waiting for each other forever.
+
+
+---
+
+# Chapter Summary
+
+In this chapter, we explored one of the most fundamental problems in concurrent programming: **race conditions**.
+
+We started by examining why a seemingly simple operation like:
+
+```java
+count++;
+```
+
+is **not atomic**.
+
+Although it appears to be a single statement, it actually consists of multiple steps:
+
+```text
+Read
+  ↓
+Modify
+  ↓
+Write
+```
+
+When multiple threads execute these steps simultaneously, updates can be lost, leading to unpredictable results.
+
+To solve this problem, Java provides the **`synchronized`** keyword.
+
+We learned that:
+
+- A **critical section** is code that accesses shared mutable state.
+- `synchronized` protects critical sections by allowing only one thread to execute them at a time.
+- Synchronization is implemented using an object's **monitor**.
+- Instance methods lock `this`, while static methods lock the `Class` object.
+- Synchronized blocks provide finer-grained control than synchronized methods.
+
+Most importantly, we learned that **thread safety isn't about protecting methods—it's about protecting shared state**.
+
+---
+
+# Key Takeaways
+
+✅ `count++` is not atomic.
+
+✅ Race conditions occur when multiple threads access shared mutable state without proper synchronization.
+
+✅ Critical sections should be as small as possible.
+
+✅ `synchronized` uses an object's monitor to provide mutual exclusion.
+
+✅ Different objects have different monitors.
+
+✅ Static synchronized methods lock the class, not an individual object.
+
+---
+
+# Quick Quiz
+
+### 1. Why can `count++` produce incorrect results in a multithreaded program?
+
+- [ ] Because integers overflow.
+- [x] Because `count++` is not an atomic operation.
+- [ ] Because Java executes threads sequentially.
+
+---
+
+### 2. What does `synchronized` actually lock?
+
+- [ ] A method
+- [x] An object's monitor
+- [ ] A variable
+
+---
+
+### 3. Can two threads execute synchronized instance methods on different objects simultaneously?
+
+- [x] Yes
+- [ ] No
+
+---
+
+### 4. What does a `static synchronized` method lock?
+
+<details>
+<summary>Answer</summary>
+
+The monitor associated with the `Class` object (for example, `Counter.class`), which is shared across all instances of that class.
+
+</details>
+
+---
+
+# What's Next?
+
+So far, we've protected shared data using locks.
+
+However, not every concurrency problem requires mutual exclusion.
+
+Sometimes we only need to ensure that changes made by one thread are **visible** to other threads.
+
+In the next chapter, we'll answer questions like:
+
+- Why does one thread sometimes fail to see another thread's updates?
+- What does the `volatile` keyword actually guarantee?
+- When should you use `AtomicInteger` instead of `synchronized`?
+- What operations are truly atomic?
+
+These concepts will introduce us to **visibility**, **atomicity**, and the building blocks of the Java Memory Model.

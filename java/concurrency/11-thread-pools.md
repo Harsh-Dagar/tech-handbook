@@ -2221,3 +2221,243 @@ Instead of executing tasks immediately, it can:
 - Execute tasks repeatedly with a fixed delay.
 
 This makes it the preferred choice for timers, maintenance jobs, monitoring, and recurring background tasks.
+
+
+---
+
+# Inside a Thread Pool
+
+So far, we've used different kinds of thread pools:
+
+- Fixed Thread Pool
+- Cached Thread Pool
+- Single Thread Executor
+- Scheduled Thread Pool
+
+Although they behave differently, they all follow the same fundamental workflow.
+
+Whenever a new task is submitted, the thread pool must decide:
+
+- Should an existing worker execute it?
+- Should the task wait in a queue?
+- Should a new worker thread be created?
+- Should the task be rejected?
+
+These decisions determine how the pool behaves under load.
+
+---
+
+# The Decision Process
+
+Every submitted task follows roughly this sequence.
+
+```mermaid
+flowchart TD
+
+A["Task Submitted"]
+
+A --> B{"Idle Worker<br/>Available?"}
+
+B -->|Yes| C["Execute Task"]
+
+B -->|No| D{"Can Create<br/>Another Worker?"}
+
+D -->|Yes| E["Create Worker<br/>Execute Task"]
+
+D -->|No| F["Place Task<br/>In Queue"]
+
+F --> G["Wait For Worker"]
+
+G --> C
+```
+
+Notice that **not every task creates a new thread**.
+
+Most tasks are simply picked up by existing worker threads.
+
+Only when necessary does the pool create additional workers.
+
+---
+
+# Step 1 — Reuse an Idle Worker
+
+Suppose the pool already has four worker threads.
+
+```
+Worker 1 (Idle)
+
+Worker 2 (Busy)
+
+Worker 3 (Busy)
+
+Worker 4 (Busy)
+```
+
+A new task arrives.
+
+The executor immediately assigns it to:
+
+```
+Worker 1
+```
+
+No queue.
+
+No thread creation.
+
+This is the cheapest possible path.
+
+---
+
+# Step 2 — Create a New Worker
+
+Now imagine all workers are busy.
+
+```
+Worker 1 (Busy)
+
+Worker 2 (Busy)
+
+Worker 3 (Busy)
+
+Worker 4 (Busy)
+```
+
+Depending on the pool's configuration,
+
+it may create another worker thread.
+
+```text
+Task Arrives
+
+↓
+
+No Idle Worker
+
+↓
+
+Create Worker 5
+
+↓
+
+Execute Task
+```
+
+Whether this is allowed depends on the pool's limits.
+
+We'll see those limits shortly.
+
+---
+
+# Step 3 — Queue the Task
+
+Sometimes creating another thread isn't the right choice.
+
+Instead, the executor places the task into a waiting queue.
+
+```text
+Task
+
+↓
+
+Queue
+
+↓
+
+Wait
+
+↓
+
+Worker Becomes Free
+
+↓
+
+Execute
+```
+
+This is exactly how a fixed thread pool behaves.
+
+---
+
+# Step 4 — Reject the Task
+
+What happens if:
+
+- Every worker is busy?
+- The queue is full?
+- No more workers can be created?
+
+The executor has only one option left.
+
+Reject the task.
+
+```text
+Task Submitted
+
+↓
+
+Workers Busy
+
+↓
+
+Queue Full
+
+↓
+
+Maximum Threads Reached
+
+↓
+
+Reject Task
+```
+
+We'll learn different rejection strategies later in this chapter.
+
+---
+
+# Every Thread Pool Is a Trade-off
+
+Different thread pools simply make different decisions.
+
+| Thread Pool | Preferred Strategy |
+|-------------|--------------------|
+| Fixed Thread Pool | Queue tasks |
+| Cached Thread Pool | Create more workers |
+| Single Thread Executor | Queue behind one worker |
+| Scheduled Thread Pool | Delay execution until scheduled time |
+
+The core idea is always the same.
+
+The difference lies in **how the executor responds when work arrives faster than it can be processed.**
+
+---
+
+# Production Note
+
+> [!NOTE]
+> Large server applications rarely create a new thread for every request.
+>
+> Instead, they carefully balance:
+>
+> - Worker thread count
+> - Queue size
+> - Memory usage
+> - CPU utilization
+> - Task latency
+>
+> Choosing these values well is one of the most important aspects of tuning a thread pool.
+
+---
+
+# Summary
+
+Although Java provides several kinds of thread pools, they all follow the same decision-making process.
+
+When a task is submitted, the executor attempts to:
+
+1. Reuse an existing worker.
+2. Create a new worker if allowed.
+3. Queue the task if necessary.
+4. Reject the task if no other option remains.
+
+In the next section, we'll see how Java exposes these decisions through the `ThreadPoolExecutor` class and learn about the configuration options that control this behavior.

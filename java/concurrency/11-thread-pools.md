@@ -762,3 +762,370 @@ The executor:
 This separation allows developers to focus on application logic while the framework handles efficient thread management.
 
 In the next section, we'll explore the different types of thread pools provided by Java and learn when each one is appropriate.
+
+
+---
+
+# Fixed Thread Pool
+
+The most commonly used thread pool in Java is the **Fixed Thread Pool**.
+
+It creates a fixed number of worker threads that are reused to execute incoming tasks.
+
+```java
+ExecutorService executor =
+        Executors.newFixedThreadPool(4);
+```
+
+This creates exactly **4 worker threads**.
+
+No matter how many tasks are submitted, the pool will never execute more than four tasks concurrently.
+
+---
+
+# How It Works
+
+Suppose we create:
+
+```java
+ExecutorService executor =
+        Executors.newFixedThreadPool(3);
+```
+
+The pool immediately creates:
+
+```
+Worker 1
+
+Worker 2
+
+Worker 3
+```
+
+Now imagine ten tasks arrive.
+
+```text
+Task 1
+Task 2
+Task 3
+Task 4
+Task 5
+Task 6
+Task 7
+Task 8
+Task 9
+Task10
+```
+
+Only three tasks can execute simultaneously.
+
+The remaining tasks wait in the queue.
+
+```mermaid
+flowchart LR
+
+A["Task Queue"]
+
+A --> B["Worker 1"]
+
+A --> C["Worker 2"]
+
+A --> D["Worker 3"]
+```
+
+---
+
+# Task Execution
+
+Suppose each task takes five seconds.
+
+```
+Time = 0s
+
+Worker 1 → Task 1
+
+Worker 2 → Task 2
+
+Worker 3 → Task 3
+```
+
+The queue contains:
+
+```
+Task 4
+
+Task 5
+
+Task 6
+
+...
+```
+
+Five seconds later:
+
+```
+Worker 1 → Task 4
+
+Worker 2 → Task 5
+
+Worker 3 → Task 6
+```
+
+Notice something important.
+
+The workers never disappear.
+
+Only the **tasks** change.
+
+---
+
+# Why Is This Efficient?
+
+Without a thread pool:
+
+```
+Task
+
+↓
+
+Create Thread
+
+↓
+
+Execute
+
+↓
+
+Destroy Thread
+```
+
+Repeated for every task.
+
+With a fixed thread pool:
+
+```
+Create Workers Once
+
+↓
+
+Execute Task
+
+↓
+
+Return Worker To Pool
+
+↓
+
+Execute Next Task
+```
+
+Thread creation happens only once.
+
+This significantly reduces overhead.
+
+---
+
+# Internal Architecture
+
+Conceptually, a fixed thread pool looks like this.
+
+```text
+                 Tasks
+                   │
+                   ▼
+          +----------------+
+          |  Task Queue    |
+          +----------------+
+             │    │    │
+      ┌──────┘    │    └──────┐
+      ▼           ▼           ▼
+
+  Worker 1    Worker 2    Worker 3
+
+      ▲           ▲           ▲
+      └───────────┴───────────┘
+
+        Reused For Future Tasks
+```
+
+The queue stores waiting tasks.
+
+Workers continuously:
+
+1. Take a task.
+2. Execute it.
+3. Return to the queue.
+4. Repeat.
+
+---
+
+# What Happens If More Tasks Arrive?
+
+Suppose the pool has:
+
+```
+4 workers
+```
+
+and:
+
+```
+500 tasks
+```
+
+The executor **does not create more workers**.
+
+Instead:
+
+```
+4 Running
+
+496 Waiting
+```
+
+Every new task joins the queue.
+
+As workers finish,
+
+they immediately begin processing queued tasks.
+
+---
+
+# Choosing the Pool Size
+
+One common question is:
+
+> **How many worker threads should I create?**
+
+There is no universal answer.
+
+It depends on the workload.
+
+### CPU-bound tasks
+
+Examples:
+
+- Image processing
+- Encryption
+- Data compression
+
+These tasks spend most of their time using the CPU.
+
+A common guideline is:
+
+```
+Number of Threads ≈ Number of CPU Cores
+```
+
+Creating significantly more threads often increases context switching without improving throughput.
+
+---
+
+### I/O-bound tasks
+
+Examples:
+
+- Database queries
+- Network requests
+- Reading files
+
+These tasks spend much of their time waiting for external systems.
+
+While one thread is waiting,
+
+another can use the CPU.
+
+For this reason,
+
+I/O-heavy applications often benefit from having more threads than CPU cores.
+
+> [!TIP]
+> Start with measurements rather than guesses. The optimal thread count depends on your workload, hardware, and latency characteristics.
+
+---
+
+# Advantages
+
+✅ Reuses worker threads.
+
+✅ Limits the maximum number of concurrent threads.
+
+✅ Predictable resource usage.
+
+✅ Suitable for long-running server applications.
+
+---
+
+# Limitations
+
+A fixed thread pool has one important limitation.
+
+Tasks that cannot start immediately wait in the queue.
+
+If tasks arrive faster than workers can process them:
+
+```
+Tasks Arriving
+
+↓
+
+Queue Grows
+
+↓
+
+Memory Usage Increases
+
+↓
+
+Longer Waiting Times
+```
+
+A continuously growing queue can eventually consume a large amount of memory.
+
+---
+
+# Real-World Examples
+
+A fixed thread pool is a good choice when:
+
+- Processing HTTP requests.
+- Executing business logic.
+- Handling background jobs.
+- Processing messages from a queue.
+- Running scheduled business operations with a controlled level of concurrency.
+
+The key idea is that the application wants to **limit the number of simultaneously running tasks**.
+
+---
+
+# Best Practices
+
+✅ Choose the pool size based on the workload.
+
+✅ Monitor queue length in production.
+
+✅ Keep tasks reasonably short.
+
+✅ Shut down the pool gracefully when the application exits.
+
+❌ Don't create a pool with hundreds of threads "just in case."
+
+❌ Don't submit long-running blocking tasks without considering their impact on queue growth.
+
+---
+
+# Summary
+
+A fixed thread pool maintains a constant number of worker threads and reuses them to process incoming tasks.
+
+If all workers are busy, new tasks wait in a queue until a worker becomes available.
+
+This provides predictable resource usage and makes fixed thread pools the most common choice for server-side applications.
+
+However, choosing an appropriate pool size is critical.
+
+Too few workers reduce throughput.
+
+Too many increase contention and context-switching overhead.
+
+Understanding your workload is the key to selecting the right configuration.

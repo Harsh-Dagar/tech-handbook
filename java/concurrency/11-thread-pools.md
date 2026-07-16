@@ -2852,3 +2852,372 @@ It follows a well-defined algorithm:
 Understanding this algorithm makes it much easier to reason about thread pool behavior under load.
 
 In the next section, we'll explore each configuration parameter—such as `corePoolSize`, `maximumPoolSize`, `keepAliveTime`, and the task queue—and see how they influence this decision process.
+
+
+---
+
+# ThreadPoolExecutor — Understanding the Configuration
+
+In the previous section, we learned the decision algorithm used by `ThreadPoolExecutor`.
+
+Now let's understand the configuration that controls this behavior.
+
+We'll use the following thread pool throughout this section.
+
+```java
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                          // corePoolSize
+        4,                          // maximumPoolSize
+        60, TimeUnit.SECONDS,       // keepAliveTime
+        new ArrayBlockingQueue<>(2) // workQueue
+);
+```
+
+Instead of explaining each parameter individually, we'll observe how this thread pool behaves as tasks arrive.
+
+---
+
+# Initial State
+
+Immediately after creation:
+
+```text
+Core Pool Size      = 2
+Maximum Pool Size   = 4
+Queue Capacity      = 2
+
+Workers             = 0
+Queue               = Empty
+```
+
+Notice that **no worker threads are created yet**.
+
+`ThreadPoolExecutor` creates threads **on demand**, not when the pool is constructed.
+
+---
+
+# Task 1 Arrives
+
+Current workers:
+
+```
+0
+```
+
+Core pool size:
+
+```
+2
+```
+
+Since:
+
+```
+0 < 2
+```
+
+A new worker thread is created.
+
+```text
+Workers
+
+Worker 1
+
+Queue
+
+Empty
+```
+
+---
+
+# Task 2 Arrives
+
+Again:
+
+```
+1 < 2
+```
+
+Another worker is created.
+
+```text
+Workers
+
+Worker 1
+Worker 2
+
+Queue
+
+Empty
+```
+
+The executor has now reached its **core pool size**.
+
+---
+
+# Task 3 Arrives
+
+Many developers expect:
+
+> "Create Worker 3."
+
+But that's **not** what happens.
+
+Since the core pool already exists, the executor first tries to use the queue.
+
+```text
+Workers
+
+Worker 1
+Worker 2
+
+Queue
+
+Task 3
+```
+
+---
+
+# Task 4 Arrives
+
+The queue still has space.
+
+```text
+Workers
+
+Worker 1
+Worker 2
+
+Queue
+
+Task 3
+Task 4
+```
+
+Now the queue is full.
+
+---
+
+# Task 5 Arrives
+
+The executor checks:
+
+- Core threads? ✅ Full
+- Queue? ❌ Full
+
+Now it considers creating additional workers.
+
+Current workers:
+
+```
+2
+```
+
+Maximum workers:
+
+```
+4
+```
+
+Since:
+
+```
+2 < 4
+```
+
+Worker 3 is created.
+
+```text
+Workers
+
+Worker 1
+Worker 2
+Worker 3
+
+Queue
+
+Task 3
+Task 4
+```
+
+Notice the order:
+
+1. Core threads
+2. Queue
+3. Extra threads
+
+---
+
+# Task 6 Arrives
+
+The queue is still full.
+
+The executor creates another worker.
+
+```text
+Workers
+
+Worker 1
+Worker 2
+Worker 3
+Worker 4
+
+Queue
+
+Task 3
+Task 4
+```
+
+The pool has now reached its maximum size.
+
+---
+
+# Task 7 Arrives
+
+Current state:
+
+```text
+Workers = 4 (Maximum)
+
+Queue = Full
+```
+
+The executor has no remaining options.
+
+The task is rejected.
+
+```text
+Reject Task
+```
+
+We'll discuss the available rejection policies in the next section.
+
+---
+
+# Understanding Each Configuration
+
+Now that we've seen the algorithm in action, each configuration parameter becomes much easier to understand.
+
+## `corePoolSize`
+
+The minimum number of worker threads the executor tries to maintain while processing tasks.
+
+These workers handle incoming work before the executor starts using the queue.
+
+Increasing the core pool size allows more tasks to begin executing immediately.
+
+---
+
+## `maximumPoolSize`
+
+The absolute upper limit on the number of worker threads.
+
+The executor only creates workers beyond the core pool size **after the queue becomes full**.
+
+Many developers mistakenly believe that workers are created up to the maximum immediately.
+
+The queue comes first.
+
+---
+
+## `workQueue`
+
+The queue stores tasks that cannot begin execution immediately.
+
+Choosing the right queue has a major impact on the behavior of the thread pool.
+
+For example:
+
+- Small queue → create additional workers sooner.
+- Large queue → fewer threads, but longer waiting time.
+
+We'll revisit queue selection in a later section.
+
+---
+
+## `keepAliveTime`
+
+Suppose the executor temporarily grows beyond its core pool size.
+
+```text
+Core Workers
+
+2
+
+Additional Workers
+
+2
+```
+
+After the workload decreases, the additional workers are no longer needed.
+
+Instead of keeping them forever, the executor waits for the configured `keepAliveTime`.
+
+```text
+Extra Worker
+
+↓
+
+Idle
+
+↓
+
+Wait 60 Seconds
+
+↓
+
+Terminate
+```
+
+Core worker threads remain alive by default.
+
+Only the additional workers are removed after being idle.
+
+This allows the thread pool to expand during busy periods and shrink when demand falls.
+
+---
+
+# Visual Summary
+
+```text
+Tasks Arrive
+
+↓
+
+Create Core Workers
+
+↓
+
+Queue Tasks
+
+↓
+
+Queue Full?
+
+↓
+
+Create Extra Workers
+
+↓
+
+Maximum Reached?
+
+↓
+
+Reject Task
+```
+
+Every configuration parameter simply influences one step of this workflow.
+
+---
+
+# Summary
+
+Rather than controlling independent features, the configuration parameters of `ThreadPoolExecutor` work together to define how the pool reacts under increasing load.
+
+- `corePoolSize` determines how many workers are created first.
+- `workQueue` decides how much work can wait.
+- `maximumPoolSize` limits how far the pool may grow.
+- `keepAliveTime` allows temporary worker threads to be cleaned up once demand decreases.
+
+Understanding how these parameters interact is far more valuable than memorizing their definitions.

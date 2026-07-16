@@ -1453,3 +1453,531 @@ Unlike a fixed thread pool, it favors creating additional threads instead of mak
 This makes it well-suited for applications with many short-lived tasks and unpredictable workloads.
 
 However, because the number of worker threads can grow significantly under heavy load, cached thread pools should be used carefully in production systems.
+
+---
+
+# Fixed Thread Pool vs Cached Thread Pool
+
+We've now explored the two most commonly used thread pools:
+
+- **Fixed Thread Pool**
+- **Cached Thread Pool**
+
+Although both execute tasks using reusable worker threads, they make very different trade-offs.
+
+The fundamental difference is:
+
+> **Should we make tasks wait, or should we create more threads?**
+
+A fixed thread pool prefers **waiting**.
+
+A cached thread pool prefers **creating additional threads**.
+
+---
+
+# High-Level Comparison
+
+```mermaid
+flowchart LR
+
+subgraph Fixed Thread Pool
+A1["Incoming Tasks"]
+B1["Task Queue"]
+C1["3 Worker Threads"]
+
+A1 --> B1
+B1 --> C1
+end
+
+subgraph Cached Thread Pool
+A2["Incoming Tasks"]
+C2["Create Worker If Needed"]
+
+A2 --> C2
+end
+```
+
+Notice the difference.
+
+The fixed pool has a **stable number of workers** and uses a queue.
+
+The cached pool has **no fixed worker limit** and tries to execute tasks immediately by creating additional workers.
+
+---
+
+# Feature Comparison
+
+| Feature | Fixed Thread Pool | Cached Thread Pool |
+|----------|-------------------|--------------------|
+| Number of worker threads | Fixed | Grows dynamically |
+| Task queue | Yes | No large waiting queue (uses direct handoff) |
+| Thread creation | Happens once | Happens when needed |
+| Resource usage | Predictable | Can grow significantly |
+| Best for | Long-running server applications | Short-lived asynchronous tasks |
+| Main risk | Queue becomes very large | Too many threads are created |
+
+---
+
+# How They Behave Under Load
+
+Imagine we have:
+
+- 4 worker threads
+- 100 incoming tasks
+
+## Fixed Thread Pool
+
+```text
+Tasks
+
+↓
+
+Queue
+
+↓
+
+Worker 1
+Worker 2
+Worker 3
+Worker 4
+```
+
+The first four tasks begin immediately.
+
+The remaining **96 tasks wait**.
+
+The number of worker threads never changes.
+
+---
+
+## Cached Thread Pool
+
+```text
+Task 1 → Worker 1
+
+Task 2 → Worker 2
+
+Task 3 → Worker 3
+
+...
+
+Task 100 → Worker 100
+```
+
+Instead of making tasks wait,
+
+the pool creates additional workers whenever necessary.
+
+This reduces waiting time but increases resource usage.
+
+---
+
+# Choosing Between Them
+
+A useful way to think about the decision is:
+
+```mermaid
+flowchart TD
+
+A["Need a Thread Pool?"]
+
+A --> B{"Need to limit<br/>the number of<br/>concurrent threads?"}
+
+B -->|Yes| C["Fixed Thread Pool"]
+
+B -->|No| D{"Are tasks<br/>short-lived and<br/>independent?"}
+
+D -->|Yes| E["Cached Thread Pool"]
+
+D -->|No| C
+```
+
+If controlling resource usage is important,
+
+choose a **Fixed Thread Pool**.
+
+If tasks are very short-lived and unpredictable,
+
+a **Cached Thread Pool** may be appropriate.
+
+---
+
+# Real-World Examples
+
+## Fixed Thread Pool 
+
+Typical use cases:
+
+- Web servers
+- REST APIs
+- Database operations
+- Message consumers
+- Batch processing
+
+These applications usually want to process many tasks while limiting the number of concurrent threads.
+
+---
+
+## Cached Thread Pool
+
+Typical use cases:
+
+- Lightweight asynchronous jobs
+- Short background tasks
+- Utility applications
+- Bursty workloads with idle periods
+
+The emphasis is on minimizing task waiting time rather than limiting thread creation.
+
+---
+
+# Common Misconceptions
+
+### ❌ "Cached Thread Pool is always faster."
+
+Not necessarily.
+
+Creating additional threads also consumes memory and increases context switching.
+
+If the workload consists of long-running tasks, a cached thread pool may actually perform worse.
+
+---
+
+### ❌ "Fixed Thread Pool cannot become overloaded."
+
+It can.
+
+The pool itself won't create more threads, but its task queue can continue growing.
+
+If tasks arrive faster than they are processed, waiting time and memory usage both increase.
+
+---
+
+### ❌ "More threads always improve performance."
+
+More threads only help when there is useful work that can execute concurrently.
+
+Beyond a certain point, additional threads simply compete for CPU time and system resources.
+
+---
+
+# Rule of Thumb
+
+| Situation | Recommended Pool |
+|-----------|------------------|
+| Need predictable resource usage | Fixed Thread Pool |
+| Need to process short bursts of lightweight tasks | Cached Thread Pool |
+| Long-running server application | Fixed Thread Pool |
+| Short asynchronous background work | Cached Thread Pool |
+| Unsure which to choose | Start with a Fixed Thread Pool |
+
+> [!TIP]
+> If you're unsure, prefer a **Fixed Thread Pool**.
+>
+> It provides more predictable resource usage and is the safer default for most server-side applications.
+
+---
+
+# Summary
+
+Both thread pools reuse worker threads, but they optimize for different goals.
+
+A **Fixed Thread Pool** limits concurrency and queues excess work, providing predictable resource usage.
+
+A **Cached Thread Pool** minimizes waiting by creating additional worker threads, making it suitable for short-lived tasks but potentially expensive under sustained load.
+
+Choosing the right thread pool is a trade-off between **queueing work** and **creating more threads**.
+
+
+---
+
+# Single Thread Executor
+
+So far, we've looked at thread pools that execute **multiple tasks concurrently**.
+
+But not every application needs parallel execution.
+
+Sometimes, the requirement is exactly the opposite:
+
+> **Execute tasks one at a time, in the order they were submitted.**
+
+This is where a **Single Thread Executor** becomes useful.
+
+```java
+ExecutorService executor =
+        Executors.newSingleThreadExecutor();
+```
+
+Unlike a fixed thread pool with multiple workers, a single thread executor maintains **exactly one worker thread**.
+
+---
+
+# How It Works
+
+Suppose we submit five tasks.
+
+```java
+executor.submit(() -> task(1));
+executor.submit(() -> task(2));
+executor.submit(() -> task(3));
+executor.submit(() -> task(4));
+executor.submit(() -> task(5));
+```
+
+Internally, the executor has:
+
+- One worker thread.
+- One task queue.
+
+```mermaid
+flowchart LR
+
+A["Task Queue"]
+
+A --> B["Worker Thread"]
+```
+
+Since there is only one worker,
+
+tasks execute one after another.
+
+```text
+Task 1
+
+↓
+
+Task 2
+
+↓
+
+Task 3
+
+↓
+
+Task 4
+
+↓
+
+Task 5
+```
+
+No two tasks execute simultaneously.
+
+---
+
+# Sequential Execution
+
+Imagine each task takes two seconds.
+
+```
+Time = 0s
+
+Worker → Task 1
+```
+
+```
+Time = 2s
+
+Worker → Task 2
+```
+
+```
+Time = 4s
+
+Worker → Task 3
+```
+
+The worker processes each task in submission order.
+
+This guarantees that one task completes before the next begins.
+
+---
+
+# Why Not Just Call the Methods Directly?
+
+A common question is:
+
+> **If everything runs one after another, why use another thread at all?**
+
+The key difference is **asynchronous execution**.
+
+Suppose the main thread submits a task.
+
+```java
+executor.submit(() -> processReport());
+
+System.out.println("Request accepted.");
+```
+
+The main thread continues immediately.
+
+Meanwhile, the worker thread processes the report in the background.
+
+```text
+Main Thread                    Worker Thread
+
+Submit Task
+      │
+      ├──────────────► Queue
+      │                    │
+Continue Working            ▼
+                     Process Report
+```
+
+The work is still asynchronous,
+
+but tasks execute in a predictable order.
+
+---
+
+# Automatic Ordering
+
+Suppose multiple threads submit tasks at the same time.
+
+```java
+executor.submit(() -> write("A"));
+executor.submit(() -> write("B"));
+executor.submit(() -> write("C"));
+```
+
+Even though the requests may originate from different threads,
+
+the executor ensures that only one task executes at a time.
+
+```text
+Queue
+
+A
+
+↓
+
+B
+
+↓
+
+C
+```
+
+This eliminates the need to manually synchronize access to certain shared resources.
+
+---
+
+# What Happens If a Task Fails?
+
+Suppose one task throws an exception.
+
+```java
+executor.submit(() -> {
+
+    throw new RuntimeException();
+
+});
+```
+
+Does the executor stop permanently?
+
+No.
+
+The failed task terminates,
+
+but the executor creates a replacement worker thread if necessary and continues processing future tasks.
+
+This means one faulty task does not permanently shut down the executor.
+
+> [!NOTE]
+> The executor is designed to continue processing new tasks even if an individual worker thread terminates unexpectedly.
+
+---
+
+# Real-World Use Cases
+
+A single thread executor is useful whenever **order matters more than parallelism**.
+
+Examples include:
+
+- Writing logs to a file.
+- Processing events sequentially.
+- Updating a cache in a consistent order.
+- Sending notifications in the order they were received.
+- Executing commands that must not overlap.
+
+In all of these cases,
+
+parallel execution could introduce inconsistencies.
+
+---
+
+# Comparison with Fixed Thread Pool
+
+| Single Thread Executor | Fixed Thread Pool |
+|-------------------------|-------------------|
+| One worker thread | Multiple worker threads |
+| Sequential execution | Parallel execution |
+| Guaranteed task ordering | Order depends on thread scheduling |
+| No concurrent task execution | Multiple tasks may execute simultaneously |
+
+---
+
+# Advantages
+
+✅ Simple way to process tasks sequentially.
+
+✅ Guarantees task ordering.
+
+✅ Removes the need for synchronization in some scenarios.
+
+✅ Executes work asynchronously without creating new threads.
+
+---
+
+# Limitations
+
+Because there is only one worker,
+
+every task waits for the previous one to finish.
+
+```text
+Long Task
+
+↓
+
+Short Task
+
+↓
+
+Short Task
+
+↓
+
+Short Task
+```
+
+If one task takes a long time,
+
+every subsequent task is delayed.
+
+This makes a single thread executor unsuitable for CPU-intensive workloads or applications requiring high throughput.
+
+---
+
+# Best Practices
+
+✅ Use when task order is important.
+
+✅ Keep tasks short.
+
+✅ Avoid long-running blocking operations.
+
+❌ Don't expect parallel execution.
+
+❌ Don't use it for workloads that require high concurrency.
+
+---
+
+# Summary
+
+A **Single Thread Executor** provides asynchronous execution while guaranteeing that tasks execute one at a time.
+
+Although it sacrifices parallelism, it greatly simplifies scenarios where maintaining task order is more important than maximizing throughput.
+
+It is an excellent choice for ordered event processing, logging, and other sequential workflows where concurrent execution would complicate the design.

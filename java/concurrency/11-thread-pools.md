@@ -1129,3 +1129,327 @@ Too few workers reduce throughput.
 Too many increase contention and context-switching overhead.
 
 Understanding your workload is the key to selecting the right configuration.
+
+---
+
+# Cached Thread Pool
+
+A fixed thread pool limits the number of worker threads.
+
+If all workers are busy, new tasks wait in a queue.
+
+A **Cached Thread Pool** takes a different approach.
+
+Instead of making tasks wait,
+
+it creates **new worker threads whenever needed**.
+
+```java
+ExecutorService executor =
+        Executors.newCachedThreadPool();
+```
+
+Unlike a fixed thread pool, there is **no fixed limit** on the number of worker threads.
+
+---
+
+# How It Works
+
+Suppose the application starts.
+
+Initially:
+
+```text
+Worker Threads
+
+0
+```
+
+The first task arrives.
+
+```text
+Task 1
+
+↓
+
+Create Worker 1
+
+↓
+
+Execute Task
+```
+
+A second task arrives while Worker 1 is still busy.
+
+```text
+Task 2
+
+↓
+
+Create Worker 2
+
+↓
+
+Execute Task
+```
+
+A third task arrives.
+
+```text
+Task 3
+
+↓
+
+Create Worker 3
+```
+
+The pool keeps creating new workers **only when no idle worker is available**.
+
+---
+
+# Reusing Idle Threads
+
+Suppose Worker 1 finishes its task.
+
+Instead of terminating immediately, it waits for more work.
+
+```text
+Worker 1
+
+↓
+
+Task Completed
+
+↓
+
+Idle
+
+↓
+
+Wait For Next Task
+```
+
+If another task arrives:
+
+```text
+New Task
+
+↓
+
+Reuse Worker 1
+```
+
+No new thread is created.
+
+This is why it's called a **Cached** Thread Pool.
+
+Idle threads are cached for future reuse.
+
+---
+
+# What Happens During a Traffic Spike?
+
+Imagine an application suddenly receives:
+
+```
+500 independent tasks
+```
+
+A cached thread pool behaves roughly like this.
+
+```text
+Tasks Arrive
+
+↓
+
+No Idle Workers
+
+↓
+
+Create More Workers
+
+↓
+
+Execute Tasks Immediately
+```
+
+Unlike a fixed thread pool,
+
+tasks usually don't wait in a queue.
+
+Instead,
+
+the number of worker threads increases.
+
+---
+
+# Internal Architecture
+
+Conceptually, it looks like this.
+
+```text
+Incoming Tasks
+      │
+      ▼
+Idle Worker Available?
+
+      │
+  ┌───┴────┐
+  │        │
+ Yes       No
+  │        │
+  ▼        ▼
+Reuse    Create New
+Worker    Worker
+```
+
+Notice the key difference from a fixed thread pool.
+
+There is **no long waiting queue**.
+
+The pool prefers creating workers over making tasks wait.
+
+---
+
+# Thread Lifecycle
+
+A cached thread pool doesn't keep every thread forever.
+
+When a worker becomes idle:
+
+```text
+Task Finished
+
+↓
+
+Idle
+
+↓
+
+Wait For More Work
+
+↓
+
+No Task For Some Time?
+
+↓
+
+Terminate Worker
+```
+
+By default, idle threads are removed after approximately **60 seconds**.
+
+This allows the pool to grow during busy periods and shrink when demand decreases.
+
+---
+
+# Fixed vs Cached Thread Pool
+
+| Fixed Thread Pool | Cached Thread Pool |
+|-------------------|--------------------|
+| Fixed number of workers | Creates workers as needed |
+| Tasks wait in a queue | Tries to execute tasks immediately |
+| Predictable thread count | Thread count can grow significantly |
+| Stable memory usage | Higher resource usage during spikes |
+| Best for controlled concurrency | Best for many short-lived asynchronous tasks |
+
+---
+
+# When Should You Use a Cached Thread Pool?
+
+A cached thread pool is useful when:
+
+- Tasks are **short-lived**.
+- The arrival rate of tasks is unpredictable.
+- Most tasks complete quickly.
+- You don't want tasks waiting in a queue.
+
+Examples:
+
+- Processing many lightweight asynchronous jobs.
+- Small utility applications.
+- Bursty workloads where idle periods are common.
+
+---
+
+# When Should You Avoid It?
+
+Suppose your application receives:
+
+```
+20,000 long-running tasks
+```
+
+A cached thread pool may attempt to create a very large number of worker threads.
+
+```text
+More Tasks
+
+↓
+
+More Threads
+
+↓
+
+More Memory
+
+↓
+
+More Context Switching
+
+↓
+
+Reduced Performance
+```
+
+Instead of improving performance,
+
+too many threads may overwhelm the system.
+
+For long-running or blocking tasks,
+
+a cached thread pool is usually **not** the right choice.
+
+> [!WARNING]
+> A cached thread pool has **no practical upper limit** on the number of threads it may create.
+>
+> If tasks are slow or arrive faster than they complete, thread creation can grow rapidly, leading to excessive memory usage and context switching.
+
+---
+
+# Real-World Examples
+
+A cached thread pool can be appropriate for:
+
+- Lightweight background jobs.
+- Short asynchronous callbacks.
+- Applications with occasional bursts of work.
+- Internal tools where task execution is brief.
+
+It is generally **not** recommended for high-traffic servers handling thousands of long-running requests.
+
+---
+
+# Best Practices
+
+✅ Use for short, fast, independent tasks.
+
+✅ Ensure tasks complete quickly.
+
+✅ Monitor thread count in production.
+
+❌ Don't use it for blocking database calls or long-running network operations.
+
+❌ Don't assume "more threads" always means "better performance."
+
+---
+
+# Summary
+
+A cached thread pool dynamically creates worker threads when demand increases and reuses idle workers whenever possible.
+
+Unlike a fixed thread pool, it favors creating additional threads instead of making tasks wait in a queue.
+
+This makes it well-suited for applications with many short-lived tasks and unpredictable workloads.
+
+However, because the number of worker threads can grow significantly under heavy load, cached thread pools should be used carefully in production systems.

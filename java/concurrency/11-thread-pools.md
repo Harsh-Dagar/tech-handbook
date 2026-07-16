@@ -2461,3 +2461,394 @@ When a task is submitted, the executor attempts to:
 4. Reject the task if no other option remains.
 
 In the next section, we'll see how Java exposes these decisions through the `ThreadPoolExecutor` class and learn about the configuration options that control this behavior.
+
+
+---
+
+# ThreadPoolExecutor — The Decision Algorithm
+
+So far, we've learned about different thread pools such as:
+
+- Fixed Thread Pool
+- Cached Thread Pool
+- Single Thread Executor
+- Scheduled Thread Pool
+
+Although they expose different APIs, they are all built on the same underlying implementation:
+
+```java
+ThreadPoolExecutor
+```
+
+In fact, most methods in the `Executors` utility class simply create a preconfigured `ThreadPoolExecutor`.
+
+Understanding this class means understanding how almost every Java thread pool behaves.
+
+---
+
+# The Four Decisions
+
+Whenever a new task is submitted, `ThreadPoolExecutor` makes a series of decisions.
+
+Conceptually, it asks:
+
+1. Can an existing worker execute this task?
+2. If not, should I create another worker?
+3. If not, should I place the task into a queue?
+4. If none of the above are possible, should I reject the task?
+
+Every task follows this decision process.
+
+---
+
+# The Complete Flow
+
+```mermaid
+flowchart TD
+
+A["Task Submitted"]
+
+A --> B{"Current Workers<br/>< Core Pool Size?"}
+
+B -->|Yes| C["Create New Worker"]
+
+B -->|No| D{"Queue Has Space?"}
+
+D -->|Yes| E["Place Task In Queue"]
+
+D -->|No| F{"Current Workers<br/>< Maximum Pool Size?"}
+
+F -->|Yes| G["Create Additional Worker"]
+
+F -->|No| H["Reject Task"]
+```
+
+This diagram is the heart of `ThreadPoolExecutor`.
+
+Every configuration option simply influences one of these decisions.
+
+---
+
+# Step 1 — Create Core Threads
+
+Suppose the executor is configured as:
+
+```text
+Core Pool Size = 4
+
+Maximum Pool Size = 8
+```
+
+Initially:
+
+```
+Workers = 0
+```
+
+Task 1 arrives.
+
+```
+0 < 4
+```
+
+Create Worker 1.
+
+---
+
+Task 2 arrives.
+
+```
+1 < 4
+```
+
+Create Worker 2.
+
+---
+
+Task 3 arrives.
+
+```
+2 < 4
+```
+
+Create Worker 3.
+
+---
+
+Task 4 arrives.
+
+```
+3 < 4
+```
+
+Create Worker 4.
+
+At this point,
+
+the executor has reached its **core pool size**.
+
+---
+
+# Step 2 — Start Using the Queue
+
+Now Task 5 arrives.
+
+Current workers:
+
+```
+4
+```
+
+Core size:
+
+```
+4
+```
+
+Since the core pool is already full,
+
+the executor does **not** immediately create another thread.
+
+Instead, it asks:
+
+> **Can the task wait?**
+
+If the queue has available space:
+
+```text
+Task 5
+
+↓
+
+Task Queue
+```
+
+The task waits until one of the existing workers becomes available.
+
+This behavior surprises many developers.
+
+A common misconception is:
+
+> "Maximum Pool Size is reached immediately after Core Pool Size."
+
+That is **not** how `ThreadPoolExecutor` works.
+
+The queue is considered **before** creating extra threads.
+
+---
+
+# Step 3 — Create Extra Threads
+
+Now imagine the queue becomes full.
+
+Another task arrives.
+
+The executor asks:
+
+```
+Can I create another worker?
+```
+
+Current workers:
+
+```
+4
+```
+
+Maximum workers:
+
+```
+8
+```
+
+Since:
+
+```
+4 < 8
+```
+
+it creates:
+
+```
+Worker 5
+```
+
+If more tasks arrive while the queue remains full:
+
+```
+Worker 6
+
+↓
+
+Worker 7
+
+↓
+
+Worker 8
+```
+
+The pool grows beyond its core size only because the queue can no longer accept additional tasks.
+
+This is an important design choice.
+
+---
+
+# Step 4 — Reject the Task
+
+Now suppose:
+
+```
+Workers = 8
+
+Queue = Full
+```
+
+Another task arrives.
+
+The executor has exhausted every option.
+
+```text
+Core Threads Full
+
+↓
+
+Queue Full
+
+↓
+
+Maximum Threads Reached
+
+↓
+
+Reject Task
+```
+
+The task cannot be executed unless space becomes available.
+
+The rejection behavior depends on the configured **Rejection Policy**, which we'll discuss later.
+
+---
+
+# A Complete Example
+
+Suppose we configure:
+
+```text
+Core Pool Size = 2
+
+Maximum Pool Size = 4
+
+Queue Capacity = 2
+```
+
+Now six tasks arrive.
+
+### Task 1
+
+```
+Create Worker 1
+```
+
+---
+
+### Task 2
+
+```
+Create Worker 2
+```
+
+---
+
+### Task 3
+
+```
+Queue
+```
+
+---
+
+### Task 4
+
+```
+Queue
+```
+
+---
+
+### Task 5
+
+Queue is now full.
+
+```
+Create Worker 3
+```
+
+---
+
+### Task 6
+
+```
+Create Worker 4
+```
+
+The state now becomes:
+
+```text
+Workers
+
+1
+2
+3
+4
+
+Queue
+
+Task 3
+
+Task 4
+```
+
+Now suppose Task 7 arrives.
+
+```
+Workers = Maximum
+
+Queue = Full
+```
+
+The executor rejects the task.
+
+---
+
+# Why This Design?
+
+A natural question is:
+
+> **Why doesn't the executor immediately create threads until it reaches the maximum pool size?**
+
+Because creating threads is relatively expensive.
+
+Whenever possible, Java prefers to:
+
+1. Reuse existing workers.
+2. Queue work.
+3. Create additional threads only when necessary.
+
+This balances throughput with resource usage.
+
+---
+
+# Key Takeaways
+
+`ThreadPoolExecutor` does not randomly create threads.
+
+It follows a well-defined algorithm:
+
+1. Create core worker threads.
+2. Queue incoming tasks.
+3. Create additional workers only if the queue is full.
+4. Reject tasks once both the queue and worker limit have been exhausted.
+
+Understanding this algorithm makes it much easier to reason about thread pool behavior under load.
+
+In the next section, we'll explore each configuration parameter—such as `corePoolSize`, `maximumPoolSize`, `keepAliveTime`, and the task queue—and see how they influence this decision process.

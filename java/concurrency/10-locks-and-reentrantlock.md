@@ -699,3 +699,299 @@ Unlike intrinsic locks, `ReentrantLock` allows us to:
 - Choose between fair and non-fair scheduling.
 
 These capabilities make `ReentrantLock` a powerful tool for building responsive, production-grade concurrent applications where waiting forever is not always acceptable.
+
+---
+
+# Choosing Between `synchronized` and `ReentrantLock`
+
+Throughout this chapter, we've seen that both `synchronized` and `ReentrantLock` provide **mutual exclusion**.
+
+Both ensure that only one thread can execute a critical section at a time.
+
+So which one should you choose?
+
+The answer depends on the requirements of your application.
+
+---
+
+# Decision Guide
+
+| Requirement | Recommended Choice | Why |
+|-------------|--------------------|-----|
+| Simple mutual exclusion | `synchronized` | Built into the language, easy to read, automatically releases the lock |
+| Need to try acquiring a lock without waiting | `ReentrantLock` | Supports `tryLock()` |
+| Need timeout while waiting | `ReentrantLock` | Supports timed `tryLock()` |
+| Need interruptible lock acquisition | `ReentrantLock` | Supports `lockInterruptibly()` |
+| Need fair scheduling | `ReentrantLock` | Supports fair locks |
+| Protect a small critical section | Either | Choose the simpler solution unless additional features are required |
+
+> [!TIP]
+> Prefer the simplest tool that satisfies your requirements.
+>
+> If `synchronized` is sufficient, there is usually no benefit in replacing it with `ReentrantLock`.
+
+---
+
+# Common Mistakes
+
+## 1. Forgetting to Release the Lock
+
+This is probably the most common mistake.
+
+❌ Incorrect
+
+```java
+lock.lock();
+
+updateDatabase();
+
+lock.unlock();
+```
+
+If `updateDatabase()` throws an exception, the lock is never released.
+
+Other threads waiting for the lock may block forever.
+
+---
+
+✅ Correct
+
+```java
+lock.lock();
+
+try {
+
+    updateDatabase();
+
+} finally {
+
+    lock.unlock();
+
+}
+```
+
+The `finally` block guarantees that the lock is always released.
+
+---
+
+## 2. Unlocking Without Owning the Lock
+
+Calling:
+
+```java
+lock.unlock();
+```
+
+without first acquiring the lock results in:
+
+```text
+IllegalMonitorStateException
+```
+
+A thread may only release a lock that it currently owns.
+
+---
+
+## 3. Holding Locks Longer Than Necessary
+
+Consider:
+
+```java
+lock.lock();
+
+try {
+
+    readLargeFile();
+
+    processData();
+
+    updateCounter();
+
+} finally {
+
+    lock.unlock();
+
+}
+```
+
+Only `updateCounter()` modifies shared state.
+
+The file reading and processing don't require synchronization.
+
+A better approach is:
+
+```java
+readLargeFile();
+
+processData();
+
+lock.lock();
+
+try {
+
+    updateCounter();
+
+} finally {
+
+    lock.unlock();
+
+}
+```
+
+Keeping critical sections small improves concurrency and reduces contention.
+
+---
+
+## 4. Using Multiple Locks Without a Consistent Order
+
+Imagine two threads.
+
+### Thread A
+
+```java
+lockA.lock();
+lockB.lock();
+```
+
+### Thread B
+
+```java
+lockB.lock();
+lockA.lock();
+```
+
+Now suppose:
+
+- Thread A acquires `lockA`.
+- Thread B acquires `lockB`.
+
+Both threads now wait forever for the other lock.
+
+```text
+Thread A
+Owns Lock A
+    │
+    ▼
+Waiting for Lock B
+
+Thread B
+Owns Lock B
+    │
+    ▼
+Waiting for Lock A
+```
+
+This is a **deadlock**.
+
+We'll study deadlocks in detail in a later chapter.
+
+For now, remember this rule:
+
+> Always acquire multiple locks in a consistent order.
+
+---
+
+# Best Practices
+
+✅ Prefer `synchronized` for simple locking.
+
+✅ Use `ReentrantLock` only when you need additional features.
+
+✅ Always pair `lock()` with `unlock()` in a `finally` block.
+
+✅ Keep critical sections as short as possible.
+
+✅ Acquire multiple locks in a consistent order.
+
+✅ Document which lock protects which shared resource.
+
+---
+
+# Summary
+
+In this chapter, we explored Java's explicit locking API.
+
+We learned that:
+
+- `ReentrantLock` provides the same mutual exclusion as `synchronized`.
+- Unlike `synchronized`, it gives developers explicit control over lock acquisition and release.
+- Features such as `tryLock()`, timed waits, interruptible locking, and fairness make it suitable for more advanced synchronization scenarios.
+- Manual lock management requires extra care, especially ensuring that every `lock()` has a matching `unlock()`.
+
+Although `ReentrantLock` is more powerful, it is not always the better choice.
+
+For many applications, `synchronized` remains the simplest and most maintainable solution.
+
+The key is choosing the right tool for the problem you're solving.
+
+---
+
+# Key Takeaways
+
+✅ `synchronized` and `ReentrantLock` both provide mutual exclusion.
+
+✅ `ReentrantLock` offers greater flexibility, but also greater responsibility.
+
+✅ Always release locks in a `finally` block.
+
+✅ Smaller critical sections improve concurrency.
+
+✅ Consistent lock ordering helps prevent deadlocks.
+
+---
+
+# Quick Quiz
+
+### 1. Which locking mechanism automatically releases the lock?
+
+- [x] `synchronized`
+- [ ] `ReentrantLock`
+
+---
+
+### 2. Which method allows you to attempt lock acquisition without blocking?
+
+- [ ] `lock()`
+- [x] `tryLock()`
+
+---
+
+### 3. Which lock type supports fairness?
+
+- [ ] `synchronized`
+- [x] `ReentrantLock`
+
+---
+
+### 4. Why should locks be held for the shortest possible time?
+
+<details>
+<summary>Answer</summary>
+
+Holding a lock longer than necessary increases contention, causing other threads to wait longer and reducing overall concurrency.
+
+</details>
+
+---
+
+# What's Next?
+
+So far, we've learned how to coordinate threads using:
+
+- `synchronized`
+- `volatile`
+- Atomic variables
+- `ReentrantLock`
+
+The next step is to explore how Java manages threads efficiently at scale.
+
+Creating a new thread for every task is expensive.
+
+Instead, modern applications reuse threads through **thread pools**.
+
+In the next chapter, we'll learn:
+
+- Why thread pools exist.
+- How they improve performance.
+- Different types of thread pools.
+- How to choose the right one for your workload.

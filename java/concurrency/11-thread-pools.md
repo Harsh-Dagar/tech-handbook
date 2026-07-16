@@ -1981,3 +1981,243 @@ A **Single Thread Executor** provides asynchronous execution while guaranteeing 
 Although it sacrifices parallelism, it greatly simplifies scenarios where maintaining task order is more important than maximizing throughput.
 
 It is an excellent choice for ordered event processing, logging, and other sequential workflows where concurrent execution would complicate the design.
+
+
+---
+
+# Scheduled Thread Pool
+
+So far, every task we've submitted has started **as soon as a worker thread became available**.
+
+But some tasks shouldn't run immediately.
+
+Instead, they should:
+
+- Run after a delay.
+- Run periodically.
+- Run at a fixed interval.
+
+For these scenarios, Java provides the **Scheduled Thread Pool**.
+
+```java
+ScheduledExecutorService scheduler =
+        Executors.newScheduledThreadPool(2);
+```
+
+Unlike other thread pools, a scheduled thread pool understands **time**.
+
+It can delay task execution or execute tasks repeatedly.
+
+---
+
+# Delayed Execution
+
+Suppose we want to send a reminder email **10 seconds later**.
+
+```java
+scheduler.schedule(
+        () -> sendReminder(),
+        10,
+        TimeUnit.SECONDS
+);
+```
+
+The task is submitted immediately,
+
+but it doesn't execute until the specified delay has elapsed.
+
+```text
+Submit Task
+
+↓
+
+Wait 10 Seconds
+
+↓
+
+Execute Task
+```
+
+---
+
+# Periodic Execution
+
+Many applications need tasks to execute repeatedly.
+
+Examples include:
+
+- Refreshing a cache.
+- Sending heartbeats.
+- Cleaning temporary files.
+- Polling an external service.
+- Performing health checks.
+
+Instead of manually creating an infinite loop,
+
+we can schedule periodic execution.
+
+---
+
+# Fixed Rate Execution
+
+```java
+scheduler.scheduleAtFixedRate(
+        this::sendHeartbeat,
+        0,
+        5,
+        TimeUnit.SECONDS
+);
+```
+
+This attempts to execute the task every **5 seconds**.
+
+```text
+0s
+
+↓
+
+5s
+
+↓
+
+10s
+
+↓
+
+15s
+
+↓
+
+20s
+```
+
+The schedule is based on the **start time** of each execution.
+
+---
+
+# Fixed Delay Execution
+
+Java also provides:
+
+```java
+scheduler.scheduleWithFixedDelay(
+        this::cleanup,
+        0,
+        5,
+        TimeUnit.SECONDS
+);
+```
+
+This behaves differently.
+
+The executor waits **5 seconds after the previous execution finishes**.
+
+Suppose the task itself takes:
+
+```
+3 seconds
+```
+
+The timeline becomes:
+
+```text
+Task Runs (3s)
+
+↓
+
+Wait 5 Seconds
+
+↓
+
+Task Runs Again
+
+↓
+
+Wait 5 Seconds
+```
+
+Notice that the delay starts **after** the previous execution completes.
+
+---
+
+# Fixed Rate vs Fixed Delay
+
+| Fixed Rate | Fixed Delay |
+|-------------|-------------|
+| Based on scheduled start time | Based on completion time |
+| Better for periodic events | Better for maintenance tasks |
+| Can attempt to "catch up" if execution falls behind | Never overlaps due to scheduling delays |
+
+Examples:
+
+**Fixed Rate**
+
+- Heartbeats
+- Metrics reporting
+- Polling every second
+
+**Fixed Delay**
+
+- Cache cleanup
+- Log rotation
+- Temporary file deletion
+
+---
+
+# Internal Architecture
+
+A scheduled thread pool works much like a normal thread pool,
+
+but tasks are first placed into a **delay queue**.
+
+```text
+Scheduled Tasks
+
+        │
+
+        ▼
+
+ Delay Queue
+
+        │
+
+        ▼
+
+ Worker Threads
+
+        │
+
+        ▼
+
+ Execute Task
+```
+
+A task becomes eligible for execution only after its scheduled time arrives.
+
+---
+
+# Best Practices
+
+✅ Use for periodic background work.
+
+✅ Keep scheduled tasks short.
+
+✅ Handle exceptions inside scheduled tasks.
+
+❌ Don't use it as a replacement for business workflows.
+
+❌ Don't schedule CPU-intensive work at very short intervals.
+
+---
+
+# Summary
+
+A **Scheduled Thread Pool** extends the idea of a thread pool by adding time-based scheduling.
+
+Instead of executing tasks immediately, it can:
+
+- Execute tasks after a delay.
+- Execute tasks repeatedly at a fixed rate.
+- Execute tasks repeatedly with a fixed delay.
+
+This makes it the preferred choice for timers, maintenance jobs, monitoring, and recurring background tasks.

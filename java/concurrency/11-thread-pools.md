@@ -3221,3 +3221,341 @@ Rather than controlling independent features, the configuration parameters of `T
 - `keepAliveTime` allows temporary worker threads to be cleaned up once demand decreases.
 
 Understanding how these parameters interact is far more valuable than memorizing their definitions.
+
+---
+
+# ThreadPoolExecutor — Rejection Policies
+
+In the previous section, we learned that a task can be rejected when:
+
+- All worker threads are busy.
+- The task queue is full.
+- The thread pool has already reached its maximum size.
+
+At this point, the executor cannot accept any more work.
+
+The obvious question is:
+
+> **What should happen to the new task?**
+
+Java answers this using a **RejectedExecutionHandler**, also known as a **Rejection Policy**.
+
+---
+
+# When Does Rejection Happen?
+
+Recall the decision algorithm.
+
+```text
+Task Submitted
+
+↓
+
+Core Threads Full
+
+↓
+
+Queue Full
+
+↓
+
+Maximum Threads Reached
+
+↓
+
+❌ Reject Task
+```
+
+The rejection policy determines what happens at the final step.
+
+Different applications require different behaviors.
+
+Some prefer to fail immediately.
+
+Others slow down the producer.
+
+Some silently discard work.
+
+---
+
+# The Four Built-in Policies
+
+Java provides four built-in rejection policies.
+
+| Policy | Behavior |
+|---------|----------|
+| `AbortPolicy` | Throw an exception |
+| `CallerRunsPolicy` | Execute the task in the calling thread |
+| `DiscardPolicy` | Silently discard the task |
+| `DiscardOldestPolicy` | Remove the oldest queued task and retry |
+
+Let's look at each one.
+
+---
+
+# 1. AbortPolicy (Default)
+
+This is the default behavior.
+
+If the executor cannot accept a task, it throws an exception.
+
+```text
+Task Submitted
+
+↓
+
+Pool Full
+
+↓
+
+RejectedExecutionException
+```
+
+Example:
+
+```java
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,
+        4,
+        60,
+        TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(2),
+        new ThreadPoolExecutor.AbortPolicy()
+);
+```
+
+### When to use it
+
+Choose `AbortPolicy` when losing work is unacceptable.
+
+Examples:
+
+- Financial transactions
+- Order processing
+- Critical business workflows
+
+Failing fast allows the application to detect overload and react appropriately.
+
+---
+
+# 2. CallerRunsPolicy
+
+Instead of rejecting the task,
+
+the executor makes the **calling thread** execute it.
+
+```text
+Application Thread
+
+↓
+
+Submit Task
+
+↓
+
+Pool Full
+
+↓
+
+Application Thread Executes Task
+```
+
+No worker thread is involved.
+
+This naturally slows down the producer.
+
+Suppose a web server submits requests faster than the pool can process them.
+
+Eventually:
+
+```text
+Pool Full
+
+↓
+
+Request Thread Executes Work
+
+↓
+
+Request Thread Becomes Busy
+
+↓
+
+Incoming Requests Slow Down
+```
+
+This creates a simple form of **backpressure**.
+
+> [!TIP]
+> `CallerRunsPolicy` can prevent an application from overwhelming itself by slowing down the rate at which new tasks are submitted.
+
+---
+
+# 3. DiscardPolicy
+
+This policy simply drops the task.
+
+```text
+Task Submitted
+
+↓
+
+Pool Full
+
+↓
+
+Discard Task
+```
+
+No exception.
+
+No retry.
+
+The task simply disappears.
+
+Because there is no notification, this policy should be used with extreme care.
+
+### Possible use cases
+
+- Telemetry
+- Metrics
+- Non-critical monitoring data
+
+Losing an occasional metric may be acceptable.
+
+Losing customer orders is not.
+
+---
+
+# 4. DiscardOldestPolicy
+
+Instead of discarding the newest task,
+
+this policy removes the **oldest waiting task** from the queue.
+
+```text
+Queue
+
+Task A
+
+Task B
+
+Task C
+```
+
+A new task arrives.
+
+The executor removes:
+
+```
+Task A
+```
+
+The new task is then inserted into the queue.
+
+```text
+Queue
+
+Task B
+
+Task C
+
+New Task
+```
+
+This policy assumes that newer work is more valuable than older queued work.
+
+One possible example is a dashboard displaying live system statistics, where recent updates are more useful than stale ones.
+
+---
+
+# Choosing the Right Policy
+
+| Situation | Recommended Policy |
+|-----------|--------------------|
+| Critical tasks must never be ignored | `AbortPolicy` |
+| Slow down the producer under overload | `CallerRunsPolicy` |
+| Losing occasional work is acceptable | `DiscardPolicy` |
+| Prefer the latest work over stale queued tasks | `DiscardOldestPolicy` |
+
+There is no universally correct choice.
+
+The right policy depends on what your application considers more important:
+
+- Reliability
+- Throughput
+- Latency
+- Freshness of data
+
+---
+
+# Can We Create Our Own Policy?
+
+Yes.
+
+Applications can implement the `RejectedExecutionHandler` interface.
+
+```java
+public class LoggingRejectionHandler
+        implements RejectedExecutionHandler {
+
+    @Override
+    public void rejectedExecution(
+            Runnable task,
+            ThreadPoolExecutor executor) {
+
+        System.out.println("Task rejected: " + task);
+
+    }
+}
+```
+
+This allows applications to:
+
+- Log rejected tasks.
+- Send alerts.
+- Retry later.
+- Store tasks in another queue.
+- Trigger custom recovery logic.
+
+---
+
+# Production Note
+
+> [!NOTE]
+> A large number of rejected tasks is usually a sign that the thread pool is undersized, tasks are taking too long, or the application is receiving more work than it can process.
+>
+> Rejection policies determine how overload is handled—they do not solve the underlying performance problem.
+
+---
+
+# Best Practices
+
+✅ Choose a rejection policy based on business requirements.
+
+✅ Monitor rejected task counts in production.
+
+✅ Prefer `CallerRunsPolicy` when slowing producers is acceptable.
+
+✅ Use `AbortPolicy` for critical business operations.
+
+❌ Don't silently discard important work.
+
+❌ Don't ignore frequent task rejections—they often indicate a system under sustained overload.
+
+---
+
+# Summary
+
+A thread pool cannot continue accepting tasks indefinitely.
+
+Once all workers are busy, the queue is full, and the maximum number of worker threads has been reached, the executor relies on a **Rejection Policy**.
+
+These policies define how the system behaves under overload:
+
+- `AbortPolicy` fails fast.
+- `CallerRunsPolicy` applies backpressure.
+- `DiscardPolicy` drops work.
+- `DiscardOldestPolicy` favors newer tasks.
+
+Choosing the correct policy is an important design decision, especially in production systems where overload is inevitable.

@@ -310,3 +310,392 @@ In the next section, we'll explore the features that make `ReentrantLock` so pow
 - Timed lock acquisition
 - `lockInterruptibly()`
 - Fair vs non-fair locks
+
+---
+
+# `tryLock()`
+
+So far, we've used:
+
+```java
+lock.lock();
+```
+
+This method blocks the current thread until the lock becomes available.
+
+```text
+Thread A
+    │
+    ▼
+Acquires Lock
+
+Thread B
+    │
+    ▼
+Calls lock()
+    │
+    ▼
+WAITING...
+```
+
+Sometimes, waiting indefinitely isn't desirable.
+
+Imagine a web server handling thousands of requests.
+
+If a request cannot acquire a lock immediately, it may be better to:
+
+- Return an error.
+- Retry later.
+- Process another request.
+
+Instead of blocking forever.
+
+This is where `tryLock()` becomes useful.
+
+---
+
+# Acquiring a Lock Without Waiting
+
+`tryLock()` attempts to acquire the lock immediately.
+
+```java
+if (lock.tryLock()) {
+
+    try {
+
+        // Critical section
+
+    } finally {
+
+        lock.unlock();
+
+    }
+
+} else {
+
+    System.out.println("Lock is busy.");
+
+}
+```
+
+If the lock is available:
+
+```text
+Acquire Lock
+
+↓
+
+Execute Critical Section
+```
+
+Otherwise:
+
+```text
+Lock Busy
+
+↓
+
+Continue Without Blocking
+```
+
+The thread never enters the **BLOCKED** state.
+
+---
+
+# Why Is This Useful?
+
+Consider a payment service.
+
+Only one thread should process a transaction for a given account at a time.
+
+However, if another request is already processing that account, waiting for several seconds might provide a poor user experience.
+
+Instead:
+
+```text
+Try Lock
+
+├── Success
+│       │
+│       ▼
+│   Process Payment
+│
+└── Failed
+        │
+        ▼
+Return "Please try again."
+```
+
+The application remains responsive instead of making users wait.
+
+---
+
+# Timed `tryLock()`
+
+Sometimes we don't want to fail immediately.
+
+Instead, we're willing to wait for a short period.
+
+`ReentrantLock` provides an overloaded version:
+
+```java
+if (lock.tryLock(2, TimeUnit.SECONDS)) {
+
+    try {
+
+        // Critical section
+
+    } finally {
+
+        lock.unlock();
+
+    }
+
+} else {
+
+    System.out.println("Couldn't acquire the lock.");
+
+}
+```
+
+The thread waits for **up to 2 seconds**.
+
+If the lock becomes available during that time, it proceeds.
+
+Otherwise, it gives up.
+
+```text
+Request Lock
+
+↓
+
+Wait (Max 2 Seconds)
+
+├── Lock Available
+│       │
+│       ▼
+│   Continue
+│
+└── Timeout
+        │
+        ▼
+Continue Without Lock
+```
+
+This gives developers much more control than `synchronized`, which always waits indefinitely.
+
+---
+
+# `lockInterruptibly()`
+
+Imagine a thread waiting for a lock.
+
+While it's waiting, the application is shutting down.
+
+Should the thread continue waiting?
+
+Usually, no.
+
+With `lock()`, the thread remains blocked until the lock becomes available.
+
+`ReentrantLock` offers a better alternative:
+
+```java
+lock.lockInterruptibly();
+
+try {
+
+    // Critical section
+
+} finally {
+
+    lock.unlock();
+
+}
+```
+
+If another thread interrupts it while it's waiting, an `InterruptedException` is thrown.
+
+The waiting thread can then clean up and exit gracefully.
+
+```text
+Waiting for Lock
+        │
+        ▼
+Interrupted?
+    ├── Yes → Exit
+    └── No  → Acquire Lock
+```
+
+This is particularly useful for:
+
+- Background worker threads
+- Task cancellation
+- Graceful application shutdown
+
+---
+
+# Fair vs Non-Fair Locks
+
+Suppose three threads are waiting for the same lock.
+
+```text
+Thread A
+
+↓
+
+Thread B
+
+↓
+
+Thread C
+```
+
+Who should acquire the lock next?
+
+There are two strategies.
+
+---
+
+## Non-Fair Lock (Default)
+
+By default:
+
+```java
+new ReentrantLock();
+```
+
+creates a **non-fair** lock.
+
+When the lock becomes available,
+
+**any waiting thread** may acquire it.
+
+Even a newly arrived thread might "cut in line."
+
+```text
+Waiting Queue
+
+A
+
+B
+
+C
+
+↓
+
+New Thread D Arrives
+
+↓
+
+D Acquires Lock
+```
+
+This may sound unfair,
+
+but it usually provides **higher throughput** because it minimizes context switching.
+
+---
+
+## Fair Lock
+
+We can request fair scheduling.
+
+```java
+Lock lock = new ReentrantLock(true);
+```
+
+Now threads acquire the lock roughly in the order they requested it.
+
+```text
+Waiting Queue
+
+A
+
+↓
+
+B
+
+↓
+
+C
+```
+
+When the lock is released:
+
+```text
+A
+
+↓
+
+B
+
+↓
+
+C
+```
+
+The oldest waiting thread gets the next opportunity.
+
+---
+
+# Fairness vs Performance
+
+Fair locks reduce the chance that a thread waits for a very long time.
+
+However, fairness comes at a cost.
+
+The JVM has less flexibility when choosing which thread should run next.
+
+This often results in lower throughput.
+
+| Non-Fair Lock | Fair Lock |
+|---------------|-----------|
+| Higher throughput | More predictable scheduling |
+| Better overall performance | Reduces starvation |
+| Default choice | Used only when fairness is important |
+
+> [!TIP]
+> Unless your application has a specific fairness requirement, prefer the default non-fair lock.
+
+---
+
+# Choosing the Right Lock Method
+
+| Method | Behavior | Typical Use Case |
+|--------|----------|------------------|
+| `lock()` | Wait indefinitely | Most common choice |
+| `tryLock()` | Return immediately if unavailable | Avoid blocking |
+| `tryLock(timeout)` | Wait for a limited time | Prevent indefinite waits |
+| `lockInterruptibly()` | Can be interrupted while waiting | Task cancellation and graceful shutdown |
+
+---
+
+# Best Practices
+
+✅ Always release the lock in a `finally` block.
+
+✅ Prefer `lock()` unless you specifically need timeout or interruption support.
+
+✅ Use `tryLock()` to avoid unnecessary blocking.
+
+✅ Use fair locks only when starvation is a real concern.
+
+❌ Never forget to call `unlock()`.
+
+❌ Don't assume fair locks are always better—they often reduce performance.
+
+---
+
+# Summary So Far
+
+In this section, we've explored the features that make `ReentrantLock` more flexible than `synchronized`.
+
+Unlike intrinsic locks, `ReentrantLock` allows us to:
+
+- Attempt lock acquisition without blocking (`tryLock()`).
+- Wait for a limited amount of time (`tryLock(timeout)`).
+- Interrupt a thread while it's waiting (`lockInterruptibly()`).
+- Choose between fair and non-fair scheduling.
+
+These capabilities make `ReentrantLock` a powerful tool for building responsive, production-grade concurrent applications where waiting forever is not always acceptable.

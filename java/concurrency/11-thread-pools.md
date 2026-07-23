@@ -2,7 +2,7 @@
 
 > **Difficulty:** 🟠 Intermediate
 >
-> **Reading Time:** ~25 minutes
+> **Reading Time:** ~90–120 minutes
 >
 > **Prerequisites**
 >
@@ -11,25 +11,40 @@
 > - Race Conditions & Synchronization
 > - Locks & ReentrantLock
 >
-> **Core Question**
+> **Core Questions**
 >
-> > **Why is creating a new thread for every task inefficient, and how do thread pools solve this problem?**
+> - Why is creating a new thread for every task inefficient?
+> - How does a thread pool manage incoming tasks?
+> - How does `ThreadPoolExecutor` decide whether to create a thread, queue a task, or reject it?
+> - How should thread pools be configured for production systems?
+>
+> **What You'll Learn**
+>
+> By the end of this chapter, you'll understand:
+>
+> - Why thread pools improve performance and scalability.
+> - The Executor Framework and task execution model.
+> - When to use Fixed, Cached, Single Thread, and Scheduled executors.
+> - How `ThreadPoolExecutor` works internally.
+> - The purpose of `corePoolSize`, `maximumPoolSize`, `keepAliveTime`, and work queues.
+> - How rejection policies handle overload.
+> - Why many production systems prefer explicit `ThreadPoolExecutor` configuration.
+> - Best practices for designing and tuning thread pools.
 >
 > **Mental Model**
 >
-> Creating a thread is like hiring a new employee for every single task.
+> Creating a new thread for every task is like hiring a new employee every time new work arrives.
 >
-> Hiring and training a new employee every time is expensive.
+> Hiring, onboarding, and training employees repeatedly is expensive.
 >
-> Instead, companies hire employees once and assign them new work as it arrives.
+> A better approach is to hire a team once and continuously assign them new work.
 >
-> A thread pool follows the same idea:
+> A thread pool applies the same idea:
 >
-> - Create a fixed set of worker threads.
-> - Reuse them for many tasks.
-> - Avoid the cost of repeatedly creating and destroying threads.
-
----
+> - Maintain a pool of reusable worker threads.
+> - Assign tasks to existing workers whenever possible.
+> - Create additional workers only when necessary.
+> - Queue or reject tasks when the system reaches its capacity.
 
 # Introduction
 

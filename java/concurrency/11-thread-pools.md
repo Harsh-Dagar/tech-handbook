@@ -3559,3 +3559,338 @@ These policies define how the system behaves under overload:
 - `DiscardOldestPolicy` favors newer tasks.
 
 Choosing the correct policy is an important design decision, especially in production systems where overload is inevitable.
+
+
+---
+
+# Why `Executors.*` Is Often Discouraged
+
+Throughout this chapter, we've used methods such as:
+
+```java
+ExecutorService executor =
+        Executors.newFixedThreadPool(4);
+```
+
+and
+
+```java
+ExecutorService executor =
+        Executors.newCachedThreadPool();
+```
+
+These methods are simple, readable, and excellent for learning the Executor Framework.
+
+So why do many experienced Java developers recommend avoiding them in production?
+
+The answer is simple:
+
+> They hide important configuration choices.
+
+As we've already learned, the behavior of a thread pool depends on:
+
+- Number of worker threads.
+- Queue capacity.
+- Maximum thread count.
+- Rejection policy.
+- Thread lifecycle.
+
+The `Executors` factory methods choose these values for you.
+
+Sometimes those defaults are perfectly acceptable.
+
+Sometimes they are not.
+
+---
+
+# The Hidden Configuration
+
+Consider this code.
+
+```java
+ExecutorService executor =
+        Executors.newFixedThreadPool(4);
+```
+
+It looks simple.
+
+But internally, Java creates something similar to:
+
+```java
+new ThreadPoolExecutor(
+        4,
+        4,
+        0L,
+        TimeUnit.MILLISECONDS,
+        new LinkedBlockingQueue<>()
+);
+```
+
+Notice something important.
+
+The queue is a:
+
+```java
+LinkedBlockingQueue
+```
+
+created without a capacity limit.
+
+Conceptually:
+
+```text
+Tasks
+
+↓
+
+LinkedBlockingQueue
+
+↓
+
+Worker Threads
+```
+
+If worker threads cannot keep up,
+
+the queue continues growing.
+
+---
+
+# Why Can This Be a Problem?
+
+Imagine a web server.
+
+Incoming requests:
+
+```
+2,000 per second
+```
+
+Worker threads process:
+
+```
+1,500 per second
+```
+
+Every second,
+
+another:
+
+```
+500 tasks
+```
+
+remain in the queue.
+
+```text
+Requests
+
+↓
+
+Queue
+
+↓
+
+Queue Gets Bigger
+
+↓
+
+Memory Usage Increases
+```
+
+Over time,
+
+the queue may consume a significant amount of memory.
+
+The thread pool itself remains healthy,
+
+but the application is storing more and more pending work.
+
+---
+
+# A Bounded Queue
+
+Instead of allowing the queue to grow indefinitely,
+
+many production systems choose a fixed capacity.
+
+```java
+new ThreadPoolExecutor(
+        4,
+        8,
+        60,
+        TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(100)
+);
+```
+
+Now the queue can hold at most:
+
+```
+100 tasks
+```
+
+Once the queue becomes full,
+
+the executor follows the algorithm we've already learned.
+
+```text
+Queue Full
+
+↓
+
+Create Extra Workers
+
+↓
+
+Maximum Reached
+
+↓
+
+Apply Rejection Policy
+```
+
+The application now has predictable limits.
+
+---
+
+# Cached Thread Pools Have a Different Risk
+
+Now consider:
+
+```java
+Executors.newCachedThreadPool();
+```
+
+Recall how a cached thread pool behaves.
+
+```text
+No Idle Worker
+
+↓
+
+Create New Worker
+```
+
+If tasks arrive faster than they complete,
+
+the pool may create a large number of worker threads.
+
+```text
+100 Tasks
+
+↓
+
+100 Workers
+
+↓
+
+500 Tasks
+
+↓
+
+500 Workers
+```
+
+This increases:
+
+- Memory usage.
+- Context switching.
+- CPU scheduling overhead.
+
+A cached thread pool is excellent for short-lived workloads,
+
+but it should be chosen with care.
+
+---
+
+# Explicit Configuration Makes Behavior Clear
+
+Compare these two examples.
+
+### Convenience Factory
+
+```java
+ExecutorService executor =
+        Executors.newFixedThreadPool(4);
+```
+
+Simple,
+
+but many important choices are hidden.
+
+---
+
+### Explicit Configuration
+
+```java
+ThreadPoolExecutor executor =
+        new ThreadPoolExecutor(
+                4,
+                8,
+                60,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(100),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+```
+
+Now anyone reading the code immediately understands:
+
+- Core thread count.
+- Maximum thread count.
+- Queue capacity.
+- Overload behavior.
+
+The configuration is explicit rather than implicit.
+
+---
+
+# Does This Mean `Executors` Is Bad?
+
+No.
+
+The `Executors` utility class is still useful.
+
+It is often perfectly appropriate for:
+
+- Learning Java concurrency.
+- Small applications.
+- Internal tools.
+- Unit tests.
+- Prototypes.
+
+However, in production systems where resource usage and overload behavior matter, many teams prefer explicit `ThreadPoolExecutor` configurations.
+
+> [!TIP]
+> The goal isn't to avoid `Executors.*`.
+>
+> The goal is to understand the configuration hidden behind the convenience methods and decide whether those defaults fit your application.
+
+---
+
+# Best Practices
+
+✅ Understand the behavior of the thread pool you create.
+
+✅ Prefer bounded queues for systems with strict memory limits.
+
+✅ Choose a rejection policy intentionally.
+
+✅ Configure thread pools based on workload characteristics.
+
+❌ Don't rely on defaults without understanding them.
+
+❌ Don't assume more threads or larger queues always improve performance.
+
+---
+
+# Summary
+
+The `Executors` utility class provides convenient factory methods that hide the complexity of `ThreadPoolExecutor`.
+
+For many applications, these defaults are perfectly reasonable.
+
+However, production systems often require tighter control over thread counts, queue sizes, and overload handling.
+
+In those situations, constructing a `ThreadPoolExecutor` directly makes the application's behavior more explicit, predictable, and easier to tune.
